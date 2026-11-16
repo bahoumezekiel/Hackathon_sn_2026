@@ -1,0 +1,10 @@
+.env
+.keys
+.git
+**/__pycache__
+.pytest_cache
+*.docx
+tests
+portal-*
+infra
+policies
