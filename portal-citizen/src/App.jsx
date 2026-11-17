@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useState } from "react";
+import { FileCheck2, History, LogOut, MessageCircle, ShieldAlert, ShieldCheck, ToggleRight } from "lucide-react";
 import { api } from "./api";
 import { hasRole, keycloak, logout, switchAccount, username } from "./auth";
 import AccessList from "./components/AccessList";
 import Assistant from "./components/Assistant";
 import Consents from "./components/Consents";
+import { Logo } from "./components/ui/Logo";
 
 const TABS = [
-  { id: "acces", label: "Mes accès", icon: "👁" },
-  { id: "assistant", label: "Assistant", icon: "🎤" },
-  { id: "consentements", label: "Consentements", icon: "✋" },
+  { id: "acces", label: "Mes accès", Icon: History },
+  { id: "assistant", label: "Assistant", Icon: MessageCircle },
+  { id: "consentements", label: "Consentements", Icon: ToggleRight },
 ];
 
 export default function App() {
@@ -39,47 +41,62 @@ export default function App() {
   if (!hasRole("citizen")) {
     return (
       <div className="gate">
+        <Logo />
         <h1>Espace réservé aux citoyens</h1>
         <p>Vous êtes connecté en tant que <b>{username()}</b>.</p>
-        <button className="btn" onClick={switchAccount}>Me connecter avec mon identifiant citoyen</button>
+        <button className="btn btn--primary" onClick={switchAccount}>Me connecter avec mon identifiant citoyen</button>
       </div>
     );
   }
 
   const t = keycloak.tokenParsed || {};
   const name = [t.given_name, t.family_name].filter(Boolean).join(" ") || username();
+  const avoided = history ? history.accesses.flatMap((a) => a.documents_avoided || []) : [];
+  const idLine = history?.iue_hint ? `IUE ${history.iue_hint}`
+    : history ? (history.identity_status === "NO_IUE" ? "Sans IUE" : "Enrôlement en cours") : null;
 
   return (
     <div className="app">
       <header className="hero">
-        <div className="hero-top">
-          <span className="brand"><span className="star">★</span> FasoLink</span>
-          <button className="ghost-light" onClick={logout}>Déconnexion</button>
+        <div className="hero__top">
+          <Logo />
+          <button className="btn btn--on-dark" onClick={logout}><LogOut aria-hidden="true" size={16} /> Déconnexion</button>
         </div>
         <h1>Bonjour {name}</h1>
-        <p>{history ? `${history.accesses.length} demande(s) ont concerné vos données` : "Chargement…"}
-          {history?.iue_hint && <> · IUE {history.iue_hint}</>}
-          {history && !history.iue_hint && <> · {history.identity_status === "NO_IUE" ? "sans IUE" : "enrôlement en cours"}</>}
+        <p className="hero__sub">
+          {history ? `${history.accesses.length} demande${history.accesses.length > 1 ? "s ont" : " a"} concerné vos données` : "Chargement…"}
+          {idLine && <> · <span className="mono">{idLine}</span></>}
         </p>
+
+        {avoided.length > 0 && (
+          <div className="saved">
+            <FileCheck2 aria-hidden="true" size={28} />
+            <div>
+              <b>{avoided.length} pièce{avoided.length > 1 ? "s" : ""} justificative{avoided.length > 1 ? "s" : ""}</b> que vous n'avez pas eu à fournir
+              <span>Les administrations les ont obtenues directement, avec une traçabilité complète.</span>
+            </div>
+          </div>
+        )}
         {integrity && (
-          <div className={`integrity ${integrity.intact ? "ok" : "bad"}`}>
+          <div className={`integrity ${integrity.intact ? "" : "integrity--bad"}`}>
             {integrity.intact
-              ? `✔ Journal d'audit intact — ${integrity.events} événements chaînés, aucune ligne modifiée ni supprimée`
-              : "⚠ Altération détectée dans le journal d'audit"}
+              ? <><ShieldCheck aria-hidden="true" size={16} /> Journal d'audit intact : {integrity.events} événements chaînés, aucune ligne modifiée ni supprimée</>
+              : <><ShieldAlert aria-hidden="true" size={16} /> Altération détectée dans le journal d'audit</>}
           </div>
         )}
       </header>
 
-      <nav className="tabs">
-        {TABS.map((x) => (
-          <button key={x.id} className={tab === x.id ? "on" : ""} onClick={() => setTab(x.id)}>
-            <span aria-hidden="true">{x.icon}</span> {x.label}
+      <nav className="tabs" role="tablist" aria-label="Sections">
+        {TABS.map(({ id, label, Icon }) => (
+          <button key={id} role="tab" id={`tab-${id}`} aria-selected={tab === id} aria-controls="panel"
+            onClick={() => setTab(id)}>
+            <Icon aria-hidden="true" size={20} /> <span>{label}</span>
           </button>
         ))}
       </nav>
 
-      <main className="content">
-        {error && <div className="banner bad">{error}</div>}
+      <main className="content" id="panel" role="tabpanel" aria-labelledby={`tab-${tab}`}>
+        {error && <div className="banner banner--deny" role="alert">{error}</div>}
         {tab === "acces" && <AccessList accesses={history?.accesses} onReported={refresh} />}
         {tab === "assistant" && <Assistant history={history} integrity={integrity} refresh={refresh} />}
         {tab === "consentements" && <Consents />}

@@ -3,23 +3,35 @@
 # Entrée (construite par la passerelle à partir de PostgreSQL) :
 #   administration : {code, status}
 #   purpose_code   : finalité déclarée
-#   predicates     : informations demandées (ex. ["est_majeur"])
+#   predicates     : questions fermées demandées (ex. ["est_majeur"]) → réponse Oui/Non
+#   attributes     : champs demandés (ex. ["nom", "pere"]) → transmis tels quels
 #   justification  : motif saisi par l'agent
 #   policy         : politique applicable (absente si aucune)
 #   consent        : dernier statut de consentement (absent si jamais recueilli)
 #
-# Sortie : data.fasolink.authz.decision = {effect, reason, granted}
+# Sortie : data.fasolink.authz.decision = {effect, reason, granted, granted_attributes}
 package fasolink.authz
 
 import rego.v1
 
 min_justification_length := 10
 
-granted := [p | some p in input.predicates; p in input.policy.allowed_predicates]
+requested_attributes := object.get(input, "attributes", [])
 
-refused := [p | some p in input.predicates; not p in object.get(input, ["policy", "allowed_predicates"], [])]
+allowed_predicates := object.get(input, ["policy", "allowed_predicates"], [])
 
-deny(reason) := {"effect": "DENY", "reason": reason, "granted": []}
+allowed_attributes := object.get(input, ["policy", "allowed_attributes"], [])
+
+granted := [p | some p in input.predicates; p in allowed_predicates]
+
+granted_attributes := [a | some a in requested_attributes; a in allowed_attributes]
+
+refused := array.concat(
+	[p | some p in input.predicates; not p in allowed_predicates],
+	[a | some a in requested_attributes; not a in allowed_attributes],
+)
+
+deny(reason) := {"effect": "DENY", "reason": reason, "granted": [], "granted_attributes": []}
 
 decision := deny("Administration suspendue ou inconnue") if {
 	object.get(input, ["administration", "status"], "") != "ACTIVE"
@@ -29,7 +41,7 @@ decision := deny("Administration suspendue ou inconnue") if {
 	input.policy.requires_justification
 	count(trim_space(object.get(input, "justification", ""))) < min_justification_length
 } else := deny(sprintf("Information non autorisée pour cette finalité : %s", [concat(", ", refused)])) if {
-	count(granted) == 0
+	count(granted) + count(granted_attributes) == 0
 } else := deny("Consentement du citoyen requis et non recueilli") if {
 	input.policy.requires_consent
 	not input.consent
@@ -40,10 +52,12 @@ decision := deny("Administration suspendue ou inconnue") if {
 	"effect": "PARTIAL",
 	"reason": sprintf("Conforme à la politique %s ; refusé : %s", [input.policy.policy_code, concat(", ", refused)]),
 	"granted": granted,
+	"granted_attributes": granted_attributes,
 } if {
 	count(refused) > 0
 } else := {
 	"effect": "PERMIT",
 	"reason": sprintf("Conforme à la politique %s", [input.policy.policy_code]),
 	"granted": granted,
+	"granted_attributes": granted_attributes,
 }

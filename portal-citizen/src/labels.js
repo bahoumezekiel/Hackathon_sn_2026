@@ -5,6 +5,16 @@ export const PURPOSES = {
 };
 export const purposeLabel = (code) => PURPOSES[code] || code;
 
+export const ATTRIBUTE_LABELS = {
+  nom: "Nom", prenoms: "Prénoms", date_naissance: "Date de naissance",
+  lieu_naissance: "Lieu de naissance", sexe: "Sexe", pere: "Père", mere: "Mère",
+};
+
+/** Libellé lisible de ce qui a été transmis (Oui/Non ou liste d'attributs). */
+export const sharedLabel = (s) => (s.value && typeof s.value === "object"
+  ? `vos informations d'état civil (${Object.keys(ATTRIBUTE_LABELS).filter((k) => k in s.value).map((k) => ATTRIBUTE_LABELS[k]).join(", ")})`
+  : s.display);
+
 export const formatDate = (iso) =>
   new Date(iso).toLocaleString("fr-FR", { dateStyle: "medium", timeStyle: "short" });
 
@@ -21,8 +31,8 @@ export const isPending = (a) => a.status === "QUEUED" || a.status === "PROCESSIN
 
 /** Phrase simple décrivant un accès, utilisée par la liste et par l'assistant vocal. */
 export function describe(a) {
-  const purpose = purposeLabel(a.purpose_code).toLowerCase();
-  if (isDenied(a)) return `${a.administration} a tenté une ${purpose} ${ago(a.created_at)}, mais l'accès a été refusé.`;
-  const what = a.shared.map((s) => s.display).join(", ") || "aucune information pour l'instant";
-  return `${a.administration}, ${ago(a.created_at)}, pour une ${purpose}. Information transmise : ${what}.`;
+  const purpose = (a.purpose_label || purposeLabel(a.purpose_code)).toLowerCase();
+  if (isDenied(a)) return `${a.administration} a tenté une démarche « ${purpose} » ${ago(a.created_at)}, mais l'accès a été refusé.`;
+  const what = a.shared.map(sharedLabel).join(", ") || "aucune information pour l'instant";
+  return `${a.administration}, ${ago(a.created_at)}, pour la démarche « ${purpose} ». Information transmise : ${what}.`;
 }

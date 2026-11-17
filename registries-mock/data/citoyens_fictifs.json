@@ -1,93 +1,259 @@
 [
   {
-    "nom": "Ouédraogo", "prenoms": "Awa", "iue": "BF1998000123",
+    "nom": "Ouédraogo",
+    "prenoms": "Awa",
+    "iue": "BF1998000123",
     "identity_status": "VERIFIED",
     "note": "Majeure, burkinabè, casier vierge",
-    "consents": ["POL_C_CASIER"],
-    "etat_civil": {"ref": "EC-OUA-1998-000123", "nom": "Ouédraogo", "prenoms": "Awa",
-                   "date_naissance": "1998-03-14", "lieu_naissance": "Ouagadougou", "sexe": "F"},
-    "nationalite": {"ref": "CNB-2016-004512", "nationalite": "BF", "statut": "VALIDE",
-                    "date_delivrance": "2016-05-02", "juridiction": "TGI Ouagadougou"},
-    "casier": {"ref": "CJ-0000781", "condamnations": []}
+    "consents": [
+      "POL_C_CASIER",
+      "POL_RECRUT_CASIER"
+    ],
+    "etat_civil": {
+      "ref": "EC-OUA-1998-000123",
+      "nom": "Ouédraogo",
+      "prenoms": "Awa",
+      "date_naissance": "1998-03-14",
+      "lieu_naissance": "Ouagadougou",
+      "sexe": "F",
+      "pere": "Ouédraogo Issaka",
+      "mere": "Sawadogo Aminata"
+    },
+    "nationalite": {
+      "ref": "CNB-2016-004512",
+      "nationalite": "BF",
+      "statut": "VALIDE",
+      "date_delivrance": "2016-05-02",
+      "juridiction": "TGI Ouagadougou"
+    },
+    "casier": {
+      "ref": "CJ-0000781",
+      "condamnations": []
+    }
   },
   {
-    "nom": "Sawadogo", "prenoms": "Issouf", "iue": "BF2010000456",
+    "nom": "Sawadogo",
+    "prenoms": "Issouf",
+    "iue": "BF2010000456",
     "identity_status": "VERIFIED",
     "note": "Mineur (16 ans), aucun consentement casier",
     "consents": [],
-    "etat_civil": {"ref": "EC-KDG-2010-000456", "nom": "Sawadogo", "prenoms": "Issouf",
-                   "date_naissance": "2010-06-01", "lieu_naissance": "Koudougou", "sexe": "M"},
-    "nationalite": {"ref": "CNB-2022-000977", "nationalite": "BF", "statut": "VALIDE",
-                    "date_delivrance": "2022-01-17", "juridiction": "TGI Koudougou"},
-    "casier": {"ref": "CJ-0000782", "condamnations": []}
+    "etat_civil": {
+      "ref": "EC-KDG-2010-000456",
+      "nom": "Sawadogo",
+      "prenoms": "Issouf",
+      "date_naissance": "2010-06-01",
+      "lieu_naissance": "Koudougou",
+      "sexe": "M",
+      "pere": "Sawadogo Boureima",
+      "mere": "Nikiéma Salamata"
+    },
+    "nationalite": {
+      "ref": "CNB-2022-000977",
+      "nationalite": "BF",
+      "statut": "VALIDE",
+      "date_delivrance": "2022-01-17",
+      "juridiction": "TGI Koudougou"
+    },
+    "casier": {
+      "ref": "CJ-0000782",
+      "condamnations": []
+    }
   },
   {
-    "nom": "Traoré", "prenoms": "Mariam", "iue": "BF1985000789",
+    "nom": "Traoré",
+    "prenoms": "Mariam",
+    "iue": "BF1985000789",
     "identity_status": "VERIFIED",
     "note": "Condamnation incompatible avec l'emploi",
-    "consents": ["POL_C_CASIER"],
-    "etat_civil": {"ref": "EC-BBD-1985-000789", "nom": "Traoré", "prenoms": "Mariam",
-                   "date_naissance": "1985-09-23", "lieu_naissance": "Bobo-Dioulasso", "sexe": "F"},
-    "nationalite": {"ref": "CNB-2005-002231", "nationalite": "BF", "statut": "VALIDE",
-                    "date_delivrance": "2005-11-08", "juridiction": "TGI Bobo-Dioulasso"},
-    "casier": {"ref": "CJ-0000783", "condamnations": [
-      {"categorie": "FRAUDE", "date": "2019-04-12", "juridiction": "TGI Bobo-Dioulasso",
-       "peine": "12 mois avec sursis"}]}
+    "consents": [
+      "POL_C_CASIER",
+      "POL_RECRUT_CASIER"
+    ],
+    "etat_civil": {
+      "ref": "EC-BBD-1985-000789",
+      "nom": "Traoré",
+      "prenoms": "Mariam",
+      "date_naissance": "1985-09-23",
+      "lieu_naissance": "Bobo-Dioulasso",
+      "sexe": "F",
+      "pere": "Traoré Lassina",
+      "mere": "Coulibaly Fanta"
+    },
+    "nationalite": {
+      "ref": "CNB-2005-002231",
+      "nationalite": "BF",
+      "statut": "VALIDE",
+      "date_delivrance": "2005-11-08",
+      "juridiction": "TGI Bobo-Dioulasso"
+    },
+    "casier": {
+      "ref": "CJ-0000783",
+      "condamnations": [
+        {
+          "categorie": "FRAUDE",
+          "date": "2019-04-12",
+          "juridiction": "TGI Bobo-Dioulasso",
+          "peine": "12 mois avec sursis"
+        }
+      ]
+    }
   },
   {
-    "nom": "Zongo", "prenoms": "Salif", "iue": "BF1979001012",
+    "nom": "Zongo",
+    "prenoms": "Salif",
+    "iue": "BF1979001012",
     "identity_status": "VERIFIED",
     "note": "Résident de nationalité étrangère",
-    "consents": ["POL_C_CASIER"],
-    "etat_civil": {"ref": "EC-OUA-1979-001012", "nom": "Zongo", "prenoms": "Salif",
-                   "date_naissance": "1979-01-30", "lieu_naissance": "Abidjan", "sexe": "M"},
-    "nationalite": {"ref": "CNB-2001-000310", "nationalite": "CI", "statut": "VALIDE",
-                    "date_delivrance": "2001-07-19", "juridiction": "N/A"},
-    "casier": {"ref": "CJ-0000784", "condamnations": [
-      {"categorie": "ROUTIER", "date": "2015-02-03", "juridiction": "TGI Ouagadougou",
-       "peine": "Amende"}]}
+    "consents": [
+      "POL_C_CASIER",
+      "POL_RECRUT_CASIER"
+    ],
+    "etat_civil": {
+      "ref": "EC-OUA-1979-001012",
+      "nom": "Zongo",
+      "prenoms": "Salif",
+      "date_naissance": "1979-01-30",
+      "lieu_naissance": "Abidjan",
+      "sexe": "M",
+      "pere": "Zongo Hamidou",
+      "mere": "Koné Awa"
+    },
+    "nationalite": {
+      "ref": "CNB-2001-000310",
+      "nationalite": "CI",
+      "statut": "VALIDE",
+      "date_delivrance": "2001-07-19",
+      "juridiction": "N/A"
+    },
+    "casier": {
+      "ref": "CJ-0000784",
+      "condamnations": [
+        {
+          "categorie": "ROUTIER",
+          "date": "2015-02-03",
+          "juridiction": "TGI Ouagadougou",
+          "peine": "Amende"
+        }
+      ]
+    }
   },
   {
-    "nom": "Kinda", "prenoms": "Aminata", "iue": null,
+    "nom": "Kinda",
+    "prenoms": "Aminata",
+    "iue": null,
     "identity_status": "NO_IUE",
     "note": "Sans IUE : procédure alternative par référence d'état civil",
     "consents": [],
-    "etat_civil": {"ref": "EC-FDG-2001-000222", "nom": "Kinda", "prenoms": "Aminata",
-                   "date_naissance": "2001-12-05", "lieu_naissance": "Fada N'Gourma", "sexe": "F"},
-    "nationalite": {"ref": "CNB-2019-003390", "nationalite": "BF", "statut": "VALIDE",
-                    "date_delivrance": "2019-03-28", "juridiction": "TGI Fada N'Gourma"},
+    "etat_civil": {
+      "ref": "EC-FDG-2001-000222",
+      "nom": "Kinda",
+      "prenoms": "Aminata",
+      "date_naissance": "2001-12-05",
+      "lieu_naissance": "Fada N'Gourma",
+      "sexe": "F",
+      "pere": "Kinda Moussa",
+      "mere": "Yaméogo Rasmata"
+    },
+    "nationalite": {
+      "ref": "CNB-2019-003390",
+      "nationalite": "BF",
+      "statut": "VALIDE",
+      "date_delivrance": "2019-03-28",
+      "juridiction": "TGI Fada N'Gourma"
+    },
     "casier": null
   },
   {
-    "nom": "Ilboudo", "prenoms": "Rasmané", "iue": null,
+    "nom": "Ilboudo",
+    "prenoms": "Rasmané",
+    "iue": null,
     "identity_status": "IDENTITY_PENDING",
     "note": "Enrôlement en cours",
-    "consents": [],
-    "etat_civil": {"ref": "EC-OHG-1993-000333", "nom": "Ilboudo", "prenoms": "Rasmané",
-                   "date_naissance": "1993-07-11", "lieu_naissance": "Ouahigouya", "sexe": "M"},
-    "nationalite": null,
-    "casier": null
+    "consents": [
+      "POL_RECRUT_CASIER"
+    ],
+    "etat_civil": {
+      "ref": "EC-OHG-1993-000333",
+      "nom": "Ilboudo",
+      "prenoms": "Rasmané",
+      "date_naissance": "1993-07-11",
+      "lieu_naissance": "Ouahigouya",
+      "sexe": "M",
+      "pere": "Ilboudo Karim",
+      "mere": "Zoungrana Odile"
+    },
+    "nationalite": {
+      "ref": "CNB-2014-007781",
+      "nationalite": "BF",
+      "statut": "VALIDE",
+      "date_delivrance": "2014-08-21",
+      "juridiction": "TGI Ouahigouya"
+    },
+    "casier": {
+      "ref": "CJ-0000787",
+      "condamnations": []
+    }
   },
   {
-    "nom": "Sanou", "prenoms": "Fatimata", "iue": "BF1990001415",
+    "nom": "Sanou",
+    "prenoms": "Fatimata",
+    "iue": "BF1990001415",
     "identity_status": "VERIFIED",
     "note": "Majeure, burkinabè, casier vierge",
-    "consents": ["POL_C_CASIER"],
-    "etat_civil": {"ref": "EC-BBD-1990-001415", "nom": "Sanou", "prenoms": "Fatimata",
-                   "date_naissance": "1990-02-18", "lieu_naissance": "Banfora", "sexe": "F"},
-    "nationalite": {"ref": "CNB-2010-005561", "nationalite": "BF", "statut": "VALIDE",
-                    "date_delivrance": "2010-09-30", "juridiction": "TGI Banfora"},
-    "casier": {"ref": "CJ-0000785", "condamnations": []}
+    "consents": [
+      "POL_C_CASIER",
+      "POL_RECRUT_CASIER"
+    ],
+    "etat_civil": {
+      "ref": "EC-BBD-1990-001415",
+      "nom": "Sanou",
+      "prenoms": "Fatimata",
+      "date_naissance": "1990-02-18",
+      "lieu_naissance": "Banfora",
+      "sexe": "F",
+      "pere": "Sanou Bakary",
+      "mere": "Barro Habibou"
+    },
+    "nationalite": {
+      "ref": "CNB-2010-005561",
+      "nationalite": "BF",
+      "statut": "VALIDE",
+      "date_delivrance": "2010-09-30",
+      "juridiction": "TGI Banfora"
+    },
+    "casier": {
+      "ref": "CJ-0000785",
+      "condamnations": []
+    }
   },
   {
-    "nom": "Ouattara", "prenoms": "Adama", "iue": "BF2008001617",
+    "nom": "Ouattara",
+    "prenoms": "Adama",
+    "iue": "BF2008001617",
     "identity_status": "VERIFIED",
     "note": "Aura 18 ans le 20 novembre 2026",
     "consents": [],
-    "etat_civil": {"ref": "EC-DDG-2008-001617", "nom": "Ouattara", "prenoms": "Adama",
-                   "date_naissance": "2008-11-20", "lieu_naissance": "Dédougou", "sexe": "M"},
-    "nationalite": {"ref": "CNB-2024-001882", "nationalite": "BF", "statut": "VALIDE",
-                    "date_delivrance": "2024-02-14", "juridiction": "TGI Dédougou"},
-    "casier": {"ref": "CJ-0000786", "condamnations": []}
+    "etat_civil": {
+      "ref": "EC-DDG-2008-001617",
+      "nom": "Ouattara",
+      "prenoms": "Adama",
+      "date_naissance": "2008-11-20",
+      "lieu_naissance": "Dédougou",
+      "sexe": "M",
+      "pere": "Ouattara Seydou",
+      "mere": "Dao Mariam"
+    },
+    "nationalite": {
+      "ref": "CNB-2024-001882",
+      "nationalite": "BF",
+      "statut": "VALIDE",
+      "date_delivrance": "2024-02-14",
+      "juridiction": "TGI Dédougou"
+    },
+    "casier": {
+      "ref": "CJ-0000786",
+      "condamnations": []
+    }
   }
 ]

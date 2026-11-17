@@ -53,10 +53,10 @@ SUP = user_token(cfg["supervisor"])
 
 
 def verify(admin, citizen, purpose, predicates, justification="Dossier usager n° 2026-118 au guichet",
-           headers=None):
+           headers=None, attributes=()):
     r = http.post("/v1/verifications", headers=headers or AGENT[admin],
                   json={"citizen": citizen, "purpose_code": purpose, "predicates": predicates,
-                        "justification": justification})
+                        "attributes": list(attributes), "justification": justification})
     r.raise_for_status()
     return r.json()
 
@@ -182,6 +182,88 @@ check("Demande relancée et traitée au retour du registre", state["status"] == 
 
 integ = http.get("/supervision/integrity", headers=SUP).json()
 check("Journal toujours intègre après la panne", integ["intact"], f"{integ['events']} événements")
+
+# ---------------------------------------------------------------------------
+RASMANE = {"registry": "ETAT_CIVIL", "local_reference": "EC-OHG-1993-000333"}
+RECRUT = ["acte_naissance_valide", "age_eligible", "nationalite_burkinabe", "casier_compatible_finalite"]
+IDENTITE = ["nom", "prenoms", "date_naissance", "lieu_naissance", "sexe", "pere", "mere"]
+
+
+def values(resp) -> dict:
+    return {a["predicate"]: a["value"] for r in resp["results"] for a in r["attestations"]}
+
+
+title("Cas d'usage 1 — Candidature à un recrutement public (3 registres, une demande)")
+res = verify("RECRUTEMENT", AWA, "CANDIDATURE_RECRUTEMENT", RECRUT)
+v = values(res)
+check("Awa : un seul envoi interroge état civil, nationalité et casier",
+      {r["registry"]["code"] for r in res["results"]} == {"ETAT_CIVIL", "NATIONALITE", "CASIER"})
+check("Awa : dossier administratif complet (4/4 conditions)", all(v.get(p) is True for p in RECRUT), v)
+docs = [d for r in res["results"] for d in r["documents_replaced"]]
+check("3 pièces évitées au candidat", len(docs) == 3, " · ".join(docs))
+v = values(verify("RECRUTEMENT", MARIAM, "CANDIDATURE_RECRUTEMENT", RECRUT))
+check("Mariam (41 ans, condamnation) : âge et casier non conformes, nationalité conforme",
+      v.get("age_eligible") is False and v.get("casier_compatible_finalite") is False
+      and v.get("nationalite_burkinabe") is True, v)
+res = verify("RECRUTEMENT", ISSOUF, "CANDIDATURE_RECRUTEMENT", RECRUT)
+casier = next(r for r in res["results"] if r["registry"]["code"] == "CASIER")
+check("Issouf : casier refusé faute de consentement du candidat", casier["decision"] == "DENY",
+      casier["decision_reason"])
+res = verify("RECRUTEMENT", AWA, "CANDIDATURE_RECRUTEMENT", RECRUT, attributes=["date_naissance"])
+ec = next(r for r in res["results"] if r["registry"]["code"] == "ETAT_CIVIL")
+check("Le recruteur n'obtient pas la date de naissance brute (refus partiel OPA)",
+      ec["decision"] == "PARTIAL" and "1998" not in json.dumps(ec["attestations"][0]["value"]), ec["decision_reason"])
+
+title("Cas d'usage 2 — Demande de bulletin n°3 (identité et filiation)")
+res = verify("CASIER", AWA, "DELIVRANCE_BULLETIN_3", [], attributes=IDENTITE)
+attrs = values(res).get("attributs_etat_civil") or {}
+check("Le service du casier reçoit identité et filiation sans téléversement d'acte",
+      attrs.get("pere") == "Ouédraogo Issaka" and attrs.get("mere") == "Sawadogo Aminata", attrs)
+check("Pièce évitée : extrait d'acte de naissance", res["results"][0]["documents_replaced"] != [],
+      res["results"][0]["documents_replaced"])
+res = verify("CASIER", AMINATA, "DELIVRANCE_BULLETIN_3", [], attributes=IDENTITE)
+check("Fonctionne aussi pour une citoyenne sans IUE (Aminata)",
+      (values(res).get("attributs_etat_civil") or {}).get("prenoms") == "Aminata")
+res = verify("CASIER", AWA, "DELIVRANCE_BULLETIN_3", ["nationalite_burkinabe"], attributes=["nom"])
+check("Le service du casier ne peut pas consulter la nationalité",
+      next(r for r in res["results"] if r["registry"]["code"] == "NATIONALITE")["decision"] == "DENY")
+
+title("Cas d'usage 3 — Instruction d'un certificat de nationalité")
+res = verify("NATIONALITE", FATIMATA, "INSTRUCTION_CERTIFICAT_NATIONALITE", [],
+             attributes=["nom", "prenoms", "date_naissance", "lieu_naissance", "pere", "mere"])
+attrs = values(res).get("attributs_etat_civil") or {}
+check("Le service de la nationalité reçoit les faits d'état civil et la filiation",
+      attrs.get("lieu_naissance") == "Banfora" and attrs.get("pere") == "Sanou Bakary", attrs)
+purposes_nat = http.get("/v1/purposes", headers=AGENT["NATIONALITE"]).json()["purposes"]
+note = next(p for p in purposes_nat if p["purpose_code"] == "INSTRUCTION_CERTIFICAT_NATIONALITE")["decision_note"]
+check("Rappel : la décision sur la nationalité reste au service compétent", bool(note) and "compétence" in note)
+res = verify("NATIONALITE", FATIMATA, "INSTRUCTION_CERTIFICAT_NATIONALITE", [], attributes=["nom", "sexe"])
+check("Attribut hors politique (sexe) refusé", res["results"][0]["decision"] == "PARTIAL",
+      res["results"][0]["decision_reason"])
+
+title("Cas d'usage 4 — Condition d'âge pour un concours (18–30 ans)")
+res = verify("CONCOURS", AWA, "ELIGIBILITE_AGE", ["age_eligible"])
+att = res["results"][0]["attestations"][0]
+check("Awa (28 ans) : éligible", att["value"] is True, att["display"])
+check("Rasmané (33 ans, enrôlement en cours) : non éligible",
+      values(verify("CONCOURS", RASMANE, "ELIGIBILITE_AGE", ["age_eligible"])).get("age_eligible") is False)
+claims = http.post("/v1/attestations/verify", json={"jws": att["jws"]}).json()["claims"]
+check("Bornes d'âge fixées par la politique et inscrites dans l'attestation",
+      claims.get("conditions") == {"min_age": 18, "max_age": 30}, claims.get("conditions"))
+res = verify("CONCOURS", AWA, "ELIGIBILITE_AGE", [], attributes=["date_naissance"])
+check("L'organisateur ne peut pas obtenir la date de naissance", res["results"][0]["decision"] == "DENY")
+
+title("Impact « Dites-le nous une fois »")
+hist = http.get("/citizen/history", headers=user_token("bf1998000123")).json()
+avoided = [d for a in hist["accesses"] for d in a["documents_avoided"]]
+check("Awa voit les pièces qu'elle n'a pas eu à fournir", len(avoided) >= 4, f"{len(avoided)} pièces")
+b3 = [s["value"] for a in hist["accesses"] if a["purpose_code"] == "DELIVRANCE_BULLETIN_3"
+      for s in a["shared"] if isinstance(s["value"], dict)]
+check("Elle voit que sa filiation a été transmise au service du casier",
+      any("pere" in v and "mere" in v for v in b3), f"{len(b3)} transmission(s) d'attributs")
+impact = http.get("/supervision/impact", headers=SUP).json()
+check("Supervision : compteur de pièces évitées", impact["documents_avoided"] > 0,
+      f"{impact['documents_avoided']} pièces évitées")
 
 stack = http.get("/supervision/stack", headers=SUP).json()["components"]
 check("Socle technique complet opérationnel", all(s["up"] for s in stack),

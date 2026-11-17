@@ -22,7 +22,9 @@ export const api = {
     request("/supervision/requests"),
     request("/supervision/alerts"),
     request("/supervision/integrity"),
-  ]).then(([stack, registries, requests, alerts, integrity]) => ({ stack, registries, requests, alerts, integrity })),
+    request("/supervision/impact"),
+  ]).then(([stack, registries, requests, alerts, integrity, impact]) =>
+    ({ stack, registries, requests, alerts, integrity, impact })),
   simulate: (code, down) => request(`/supervision/registries/${code}/simulate`, { method: "POST", body: { down } }),
   updateAlert: (id, status) => request(`/supervision/alerts/${id}`, { method: "POST", body: { status } }),
 };

@@ -18,10 +18,12 @@ _client = httpx.Client(base_url=config.OPA_URL, timeout=2)
 class Decision:
     effect: str                       # PERMIT | PARTIAL | DENY
     reason: str
-    granted: list = field(default_factory=list)
+    granted: list = field(default_factory=list)              # prédicats accordés
+    granted_attributes: list = field(default_factory=list)   # attributs accordés
     policy_id: object = None
     legal_basis: str | None = None
     degraded_cache_ttl_s: int = 0
+    predicate_params: dict = field(default_factory=dict)     # fixés par la politique
 
     @property
     def allowed(self) -> bool:
@@ -29,7 +31,8 @@ class Decision:
 
 
 def evaluate(conn, *, admin_id, registry_id, identity_id, purpose_code: str,
-             predicates: list[str], justification: str | None) -> Decision:
+             predicates: list[str], justification: str | None,
+             attributes: list[str] | None = None) -> Decision:
     admin = conn.execute("SELECT code, status FROM administration WHERE id=%s",
                          (admin_id,)).fetchone()
     pol = conn.execute(
@@ -44,15 +47,17 @@ def evaluate(conn, *, admin_id, registry_id, identity_id, purpose_code: str,
         "administration": dict(admin) if admin else {},
         "purpose_code": purpose_code,
         "predicates": list(predicates),
+        "attributes": list(attributes or []),
         "justification": justification or "",
     }
     base = {}
     if pol:
         opa_input["policy"] = {k: pol[k] for k in ("policy_code", "allowed_predicates",
-                                                   "requires_consent", "requires_justification",
-                                                   "legal_basis")}
+                                                   "allowed_attributes", "requires_consent",
+                                                   "requires_justification", "legal_basis")}
         base = dict(policy_id=pol["id"], legal_basis=pol["legal_basis"],
-                    degraded_cache_ttl_s=pol["degraded_cache_ttl_s"])
+                    degraded_cache_ttl_s=pol["degraded_cache_ttl_s"],
+                    predicate_params=pol["predicate_params"] or {})
         if pol["requires_consent"]:
             consent = conn.execute(
                 """SELECT consent_status FROM citizen_consent
@@ -71,7 +76,8 @@ def evaluate(conn, *, admin_id, registry_id, identity_id, purpose_code: str,
         return Decision("DENY", "Moteur de politiques indisponible : accès refusé par sécurité", **base)
     if not result:
         return Decision("DENY", "Aucune décision du moteur de politiques", **base)
-    return Decision(result["effect"], result["reason"], list(result.get("granted", [])), **base)
+    return Decision(result["effect"], result["reason"], list(result.get("granted", [])),
+                    list(result.get("granted_attributes", [])), **base)
 
 
 def health() -> bool:

@@ -15,7 +15,18 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 ENV = ROOT / ".env"
 REALM = ROOT / "infra" / "keycloak" / "realm-fasolink.json"
 DEMO_PASSWORD = "demo"  # comptes de démonstration uniquement
+# Administrations disposant d'un système d'information connecté (client machine Keycloak)
 ADMINS = {"ADMIN_A": "Administration A", "ADMIN_B": "Administration B", "ADMIN_C": "Administration C"}
+# Comptes agents (code administration = groupe Keycloak) — aligné avec gateway/config.py DEMO_AGENTS
+AGENTS = {
+    "ADMIN_A": ("agent-a", "Administration A"),
+    "ADMIN_B": ("agent-b", "Administration B"),
+    "ADMIN_C": ("agent-c", "Administration C"),
+    "RECRUTEMENT": ("agent-recrutement", "Recrutement — entreprise publique"),
+    "CONCOURS": ("agent-concours", "Examens et concours"),
+    "CASIER": ("agent-casier", "Service du casier judiciaire"),
+    "NATIONALITE": ("agent-nationalite", "Service de la nationalité"),
+}
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--force", action="store_true")
@@ -104,7 +115,8 @@ for code, name in ADMINS.items():
     users.append({"username": f"service-account-{client_id}", "enabled": True,
                   "serviceAccountClientId": client_id, "realmRoles": ["agent"],
                   "groups": [f"/{code}"]})
-    users.append(user(f"agent-{code[-1].lower()}", "Agent", name, ["agent"], [code]))
+for code, (login, label) in AGENTS.items():
+    users.append(user(login, "Agent", label, ["agent"], [code]))
 users.append(user("superviseur", "Délégué", "Protection des données", ["supervisor"]))
 for c in citizens:
     # Identifiant de connexion : IUE, ou référence d'état civil pour les citoyens sans IUE
@@ -114,12 +126,15 @@ for c in citizens:
 realm = {
     "realm": "fasolink", "enabled": True, "displayName": "FasoLink",
     "accessTokenLifespan": 900, "sslRequired": "none",
+    # Thème de connexion FasoLink (infra/keycloak/themes/fasolink), en français
+    "loginTheme": "fasolink",
+    "internationalizationEnabled": True, "supportedLocales": ["fr"], "defaultLocale": "fr",
     "roles": {"realm": [
         {"name": "agent", "description": "Agent ou système d'une administration demandeuse"},
         {"name": "supervisor", "description": "Supervision et protection des données"},
         {"name": "citizen", "description": "Citoyen consultant ses données"},
     ]},
-    "groups": [{"name": code, "attributes": {"label": [name]}} for code, name in ADMINS.items()],
+    "groups": [{"name": code, "attributes": {"label": [label]}} for code, (_, label) in AGENTS.items()],
     "clients": clients,
     "users": users,
 }

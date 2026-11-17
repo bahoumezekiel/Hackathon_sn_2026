@@ -98,6 +98,7 @@ services:
     ports: ["127.0.0.1:8080:8080"]
     volumes:
       - ./infra/keycloak/realm-fasolink.json:/opt/keycloak/data/import/realm-fasolink.json:ro
+      - ./infra/keycloak/themes/fasolink:/opt/keycloak/themes/fasolink:ro   # thème de connexion
     healthcheck:
       test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q '\"UP\"' <&3"]
       interval: 5s

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Mic, MicOff, SendHorizontal } from "lucide-react";
 import { api } from "../api";
 import { describe, isDenied, purposeLabel } from "../labels";
 
@@ -24,10 +25,19 @@ async function answer(question, history, integrity) {
     await api.report(last.id, `Signalement vocal : « ${question} »`, "VOICE");
     return `C'est fait. J'ai signalé le dernier accès : ${describe(last)} Un délégué à la protection des données va l'examiner.`;
   }
+  if (/piece|document|papier|evite|demarche/.test(q)) {
+    const docs = list.flatMap((a) => a.documents_avoided || []);
+    if (!docs.length) return "Pour l'instant, aucune pièce justificative n'a été obtenue directement pour vous.";
+    const count = {};
+    docs.forEach((d) => { count[d] = (count[d] || 0) + 1; });
+    return `Vous n'avez pas eu à fournir ${docs.length} pièce(s) : `
+      + Object.entries(count).map(([d, n]) => `${d}${n > 1 ? ` (${n} fois)` : ""}`).join(", ")
+      + ". Les administrations les ont obtenues directement, et chaque échange est tracé.";
+  }
   if (/consent|accord|autoris/.test(q)) {
     const c = await api.consents();
     if (!c.length) return "Aucune vérification ne dépend de votre consentement.";
-    return c.map((x) => `${x.administration}, ${purposeLabel(x.purpose_code).toLowerCase()} : ${x.status === "GRANTED" ? "accordé" : "non accordé"}.`).join(" ")
+    return c.map((x) => `${x.administration}, ${(x.purpose_label || purposeLabel(x.purpose_code)).toLowerCase()} : ${x.status === "GRANTED" ? "accordé" : "non accordé"}.`).join(" ")
       + " Vous pouvez le changer dans l'onglet Consentements.";
   }
   if (/integr|falsifi|modifi|efface|confiance/.test(q)) {
@@ -54,7 +64,8 @@ async function answer(question, history, integrity) {
   return "Je peux vous dire qui a consulté vos données, s'il y a eu des refus, l'état de vos consentements, ou signaler un accès. Que souhaitez-vous ?";
 }
 
-const SUGGESTIONS = ["Qui a consulté mes données ?", "Y a-t-il eu des refus ?", "Je veux signaler le dernier accès"];
+const SUGGESTIONS = ["Qui a consulté mes données ?", "Quelles pièces m'ont été évitées ?",
+  "Y a-t-il eu des refus ?", "Je veux signaler le dernier accès"];
 
 export default function Assistant({ history, integrity, refresh }) {
   const [messages, setMessages] = useState([
@@ -100,17 +111,21 @@ export default function Assistant({ history, integrity, refresh }) {
 
   return (
     <div className="assistant">
-      <div className="log" ref={logRef}>
-        {messages.map((m, i) => <div key={i} className={`bubble ${m.from}`}>{m.text}</div>)}
+      <div className="log" ref={logRef} role="log" aria-live="polite" aria-label="Conversation avec l'assistant">
+        {messages.map((m, i) => <div key={i} className={`bubble bubble--${m.from}`}>{m.text}</div>)}
       </div>
-      <div className="suggestions">
+      <div className="suggestions" aria-label="Questions suggérées">
         {SUGGESTIONS.map((s) => <button key={s} onClick={() => ask(s)}>{s}</button>)}
       </div>
       <form className="composer" onSubmit={(e) => { e.preventDefault(); ask(input); setInput(""); }}>
-        <button type="button" className={`mic ${listening ? "listening" : ""}`} onClick={listen}
-          disabled={!SpeechRecognition} title="Parler" aria-label="Parler à l'assistant">🎤</button>
-        <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="…ou écrivez votre question" />
-        <button className="send">Envoyer</button>
+        <button type="button" className={`mic ${listening ? "mic--listening" : ""}`} onClick={listen}
+          disabled={!SpeechRecognition} aria-pressed={listening}
+          aria-label={listening ? "Écoute en cours" : "Parler à l'assistant"}>
+          {SpeechRecognition ? <Mic aria-hidden="true" size={24} /> : <MicOff aria-hidden="true" size={24} />}
+        </button>
+        <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="…ou écrivez votre question"
+          aria-label="Votre question" />
+        <button className="send" aria-label="Envoyer"><SendHorizontal aria-hidden="true" size={20} /></button>
       </form>
       <div className="hint">
         {micError || (SpeechRecognition

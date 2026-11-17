@@ -51,6 +51,14 @@ REGISTRY_URLS = {
 }
 
 DEMO_MODE = _get("FASOLINK_DEMO_MODE", "0") == "1"
+
+# Comptes agents de démonstration (code administration -> identifiant Keycloak).
+# Doit rester aligné avec AGENTS dans scripts/init_env.py.
+DEMO_AGENTS = {
+    "ADMIN_A": "agent-a", "ADMIN_B": "agent-b", "ADMIN_C": "agent-c",
+    "RECRUTEMENT": "agent-recrutement", "CONCOURS": "agent-concours",
+    "CASIER": "agent-casier", "NATIONALITE": "agent-nationalite",
+}
 ATTESTATION_TTL_S = int(_get("FASOLINK_ATTESTATION_TTL_S", "900"))
 CIRCUIT_COOLDOWN_S = int(_get("FASOLINK_CIRCUIT_COOLDOWN_S", "15"))
 WORKER_INTERVAL_S = float(_get("FASOLINK_WORKER_INTERVAL_S", "3"))

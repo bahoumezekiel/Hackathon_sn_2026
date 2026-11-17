@@ -9,7 +9,7 @@ Les pièces circulent entre administrations, pas les usagers entre guichets.
 |---|---|---|
 | Base de données | **PostgreSQL 16** | Identités chiffrées, politiques, demandes, attestations, journal d'audit chaîné (append-only imposé par des triggers) |
 | API d'interopérabilité | **FastAPI** | Passerelle : API pure, sans écrans |
-| Interfaces | **React 18 + Vite** | 3 applications indépendantes, une par rôle, servies par nginx (qui relaie `/api` vers la passerelle) |
+| Interfaces | **React 18 + Vite** | 3 applications indépendantes, une par rôle, servies par nginx (qui relaie `/api` vers la passerelle). Design system commun dans [design/](design/) : jetons CSS, police Noto Sans auto-hébergée, icônes `lucide-react` |
 | Authentification et rôles | **Keycloak 26** | Realm `fasolink`. Rôles `agent`, `supervisor` et `citizen`. Une administration correspond à un groupe Keycloak. Un client public par portail (*Authorization Code + PKCE S256*, imposé). Clients machine `admin-a`, `admin-b` et `admin-c` (*client credentials*) |
 | Moteur de politiques | **Open Policy Agent 1.0** | [policies/fasolink.rego](policies/fasolink.rego) : finalité, justification, prédicats, consentement. La passerelle refuse tout accès si OPA ne répond pas. Les décisions sont journalisées |
 | Cache et résilience | **Redis 7.4** | Disjoncteurs partagés, cache du mode dégradé (prédicats uniquement), file de relance. PostgreSQL fait foi : si Redis perd sa file, elle est reconstruite |
@@ -24,12 +24,12 @@ Prérequis : Docker Desktop, Python 3.12+ (uniquement pour les scripts).
 ```powershell
 python scripts/init_env.py          # une fois : secrets aléatoires (.env) + realm Keycloak
 docker compose up -d --build        # environ 1 minute (Keycloak est le plus long)
-python scripts/demo_epreuve.py      # rejoue l'épreuve : 28 vérifications
+python scripts/demo_epreuve.py      # rejoue l'épreuve et les 4 cas d'usage : 46 vérifications
 ```
 
 | Application | Adresse | Compte de démo (mot de passe `demo`) |
 |---|---|---|
-| **Portail administration** | http://localhost:3001 | `agent-a`, `agent-b` ou `agent-c` |
+| **Portail administration** | http://localhost:3001 | `agent-a`, `agent-b`, `agent-c`, `agent-recrutement`, `agent-concours`, `agent-casier`, `agent-nationalite` |
 | **Portail citoyen** | http://localhost:3002 | IUE en minuscules (`bf1998000123`), ou référence d'état civil sans IUE (`ec-fdg-2001-000222`) |
 | **Portail supervision** | http://localhost:3003 | `superviseur` |
 | API (Swagger) | http://localhost:8000/docs | jeton Keycloak |
@@ -52,6 +52,25 @@ curl -X POST http://localhost:8080/realms/fasolink/protocol/openid-connect/token
 - Tests : `python -m pytest` pour les prédicats ;
 - `docker run --rm -v ${PWD}/policies:/policies openpolicyagent/opa:1.0.0 test /policies -v` pour les 9 tests de politique ;
 - Arrêt : `docker compose down`. Toutes les données sont réinitialisées au prochain démarrage.
+- Attention : `docker compose up -d --build gateway` relance aussi l'initialisation, donc **remet les données de démo à zéro**. Évitez de le faire juste avant de présenter.
+
+## Cas d'usage pratiques
+
+Chaque démarche est décrite dans le catalogue des finalités (table `purpose`, [db/migrations/003_cas_usage.sql](db/migrations/003_cas_usage.sql)). Elle indique les pièces justificatives qu'elle évite. Le citoyen voit son compteur de pièces évitées, et la supervision voit le total par document.
+
+| # | Démarche | Compte | Registres | Ce qui est transmis | Pièces évitées |
+|---|---|---|---|---|---|
+| 1 | **Candidature à un recrutement public** | `agent-recrutement` | État civil + nationalité + casier, en **un seul envoi** | 4 réponses Oui/Non : acte de naissance enregistré, âge 18–35 ans, nationalité burkinabè, casier compatible (consentement requis) | Extrait d'acte de naissance, certificat de nationalité, extrait de casier de moins de 3 mois |
+| 2 | **Demande de bulletin n°3** | `agent-casier` | État civil | Attributs autorisés : nom, prénoms, date et lieu de naissance, sexe, **filiation** | Extrait d'acte de naissance (ou jugement supplétif) |
+| 3 | **Instruction d'un certificat de nationalité** | `agent-nationalite` | État civil | Faits d'état civil et filiation. L'écran rappelle que **la décision reste au service de la nationalité** | Extrait d'acte de naissance |
+| 4 | **Condition d'âge (concours, formation)** | `agent-concours` | État civil | Uniquement « Âge conforme (18–30 ans) : Oui/Non ». **Les bornes sont fixées par la politique** et inscrites dans l'attestation signée | Extrait d'acte de naissance |
+
+Trois garde-fous de la conception :
+- **Bornes d'âge imposées par la politique :** si l'agent pouvait choisir les bornes, il retrouverait la date de naissance exacte en les faisant varier.
+- **Attributs bruts refusés par OPA :** un recruteur ou un organisateur de concours qui demande la date de naissance brute reçoit un refus. Le citoyen voit cette tentative.
+- **Pas de cache pour les attributs :** les attributs (identité, filiation) ne sont jamais mis en cache pour le mode dégradé. Seules des réponses Oui/Non peuvent être réutilisées.
+
+Le diplôme et les pièces propres à chaque recrutement restent à fournir par le candidat : FasoLink ne couvre que les pièces détenues par l'administration.
 
 ## Ce qui répond à l'épreuve en direct
 
@@ -89,13 +108,36 @@ registries-mock/       3 registres simulés + citoyens fictifs (remplaçables pa
 portal-agent/          React : écran de l'administration demandeuse        → :3001
 portal-citizen/        React : historique des accès + assistant vocal       → :3002
 portal-supervision/    React : registres, socle, alertes, intégrité         → :3003
+design/                Design system (source unique) : tokens.css, StatusPill, Logo, polices
 db/migrations/         Schéma PostgreSQL
 infra/vault/           Configuration de Vault (clés Transit, politique de la passerelle)
-infra/keycloak/        Realm généré par scripts/init_env.py (non versionné)
+infra/keycloak/        Realm généré par scripts/init_env.py (non versionné) + thème de connexion
 scripts/               init_env, seed_demo, demo_epreuve
 ```
 
-Chaque portail est une application autonome : son propre `package.json`, son client Keycloak, son image Docker (build Node, puis nginx) et son identité visuelle. Le seul point commun entre les trois est l'API.
+Chaque portail est une application autonome : son propre `package.json`, son client Keycloak et son image Docker (build Node, puis nginx). Les trois partagent l'API et le design system.
+
+### Design system
+
+- **Source unique : [design/](design/).**
+  - `tokens.css` contient les jetons de couleur, typographie, espacement et états.
+  - Il définit trois thèmes, choisis par `<html data-portal="agent|citizen|supervision">`.
+  - Le dossier contient aussi `StatusPill.jsx` (pastille d'état, verdict Oui/Non, synthèse d'un dossier), `Logo.jsx` et la police Noto Sans (licence OFL).
+- **Copie dans chaque portail :** Docker construit chaque portail isolément, donc une copie est déposée dans `src/styles/` et `src/components/ui/`. Après toute modification de `design/`, lancez `python scripts/sync_design.py`. Pour vérifier qu'aucune copie n'a divergé, lancez `python scripts/sync_design.py --check`.
+- **Règles d'usage :**
+  - Un état n'est jamais signalé par la couleur seule : chaque pastille porte une icône et un mot.
+  - Les composants n'utilisent que les jetons sémantiques (`--ok-bg`, `--deny-fg`…), jamais les couleurs brutes.
+  - Le portail citoyen garde des zones tactiles d'au moins 48 px.
+
+### Page de connexion Keycloak
+
+Le thème `fasolink` se trouve dans [infra/keycloak/themes/fasolink/login/](infra/keycloak/themes/fasolink/login/). Le realm l'active, en français.
+
+- **Fonctionnement :** il hérite du thème Keycloak standard, donc les formulaires et les flux d'authentification ne changent pas. Seuls l'habillage et les textes sont personnalisés.
+- **Adapté à chaque portail :** l'écran reconnaît le portail d'où vient l'utilisateur (client OIDC). Il reprend alors ses couleurs et affiche un texte adapté : guichet administration, « Mes données » pour le citoyen, supervision en thème sombre.
+- **Jetons et polices :** ce sont les mêmes que les portails, copiés par `scripts/sync_design.py`.
+- **Comptes de démonstration :** ils sont affichés sous le formulaire. Mettez `fasolinkDemo=false` dans `theme.properties` hors démo.
+- **Prise en compte des modifications :** les modifications du thème apparaissent au rechargement de la page, sans redémarrage, car Keycloak tourne en `start-dev`. Seul un premier ajout du thème demande de recréer le conteneur : `docker compose up -d --no-deps --force-recreate keycloak`.
 
 ## Limites de cette version de démonstration
 

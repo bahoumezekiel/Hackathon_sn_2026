@@ -1,0 +1,127 @@
+/* Thème de connexion FasoLink — s'appuie sur tokens.css (design/), même thème que le portail
+   d'origine grâce à <html data-portal="agent|citizen|supervision">. Surcharge PatternFly. */
+
+html.login-pf, .login-pf body { background: var(--bg-subtle) !important; background-image: none !important; }
+body.fl-body { margin: 0; font-family: var(--font-sans); font-size: var(--text-md); line-height: var(--leading-md); color: var(--text); }
+.fl-body *, .fl-body *::before, .fl-body *::after { box-sizing: border-box; }
+.fl-body a { color: var(--primary); }
+
+.fl-shell { min-height: 100vh; display: grid; grid-template-columns: minmax(340px, 5fr) 7fr; }
+
+/* --- Panneau de marque -------------------------------------------------- */
+.fl-brand { position: relative; display: flex; flex-direction: column; gap: var(--space-8);
+  padding: var(--space-12); background: var(--fl-green-900); color: #fff; overflow: hidden; }
+.fl-brand::before { /* grande étoile en filigrane */
+  content: ""; position: absolute; right: -80px; bottom: -60px; width: 360px; height: 360px; opacity: 0.07;
+  background: no-repeat center / contain url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath fill='%23fcd116' d='M16 1l4.3 10.1 10.9.8-8.3 7.1 2.6 10.6L16 24l-9.5 5.6 2.6-10.6L.8 11.9l10.9-.8z'/%3E%3C/svg%3E"); }
+.fl-brand::after { /* liseré aux couleurs du drapeau */
+  content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 6px;
+  background: linear-gradient(90deg, var(--fl-red-600) 0 50%, var(--fl-green-700) 50% 100%); }
+.fl-brand__top { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
+.fl-logo { display: inline-flex; align-items: center; gap: var(--space-3); }
+.fl-logo svg rect:first-child { stroke: rgb(255 255 255 / 0.25); stroke-width: 1; }
+.fl-logo__name { font-size: 22px; font-weight: var(--weight-bold); letter-spacing: -0.01em; }
+.fl-brand__portal { font-size: var(--text-xs); font-weight: var(--weight-bold); text-transform: uppercase; letter-spacing: 0.08em;
+  padding: 4px 10px; border-radius: var(--radius-pill); background: rgb(255 255 255 / 0.14); }
+.fl-brand__body { margin: auto 0; max-width: 460px; position: relative; }
+.fl-brand__motto { font-size: var(--text-xl); line-height: var(--leading-xl); font-weight: var(--weight-bold); margin: 0 0 var(--space-4); }
+.fl-brand__lead { margin: 0 0 var(--space-6); opacity: 0.88; }
+.fl-brand__points { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-3); }
+.fl-brand__points li { position: relative; padding-left: 28px; font-size: var(--text-sm); line-height: var(--leading-sm); opacity: 0.92; }
+.fl-brand__points li::before { content: ""; position: absolute; left: 0; top: 1px; width: 18px; height: 18px; border-radius: 50%;
+  background: var(--fl-star-400) no-repeat center / 12px
+  url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23064a35' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E"); }
+.fl-brand__foot { margin: 0; font-size: var(--text-xs); line-height: var(--leading-xs); opacity: 0.7; position: relative; }
+
+/* --- Zone du formulaire -------------------------------------------------- */
+.fl-main { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-4);
+  padding: var(--space-8) var(--space-4); }
+.login-pf .card-pf.fl-card { width: 100%; max-width: 440px; margin: 0; padding: var(--space-8); background: var(--surface);
+  border: 1px solid var(--border); border-top: 4px solid var(--primary); border-radius: var(--radius-lg); box-shadow: var(--shadow-2); }
+.fl-card .login-pf-header { margin: 0 0 var(--space-6); padding: 0; }
+.fl-card__eyebrow { display: block; font-size: var(--text-xs); line-height: var(--leading-xs); font-weight: var(--weight-bold);
+  text-transform: uppercase; letter-spacing: 0.08em; color: var(--primary); margin-bottom: var(--space-2); }
+.fl-card h1#kc-page-title { margin: 0; font-size: var(--text-xl); line-height: var(--leading-xl); font-weight: var(--weight-bold);
+  text-align: left; color: var(--text); }
+.fl-card__hint { margin: var(--space-2) 0 0; font-size: var(--text-sm); line-height: var(--leading-sm); color: var(--text-muted); }
+
+#kc-content, #kc-content-wrapper, #kc-form-wrapper { width: auto; margin: 0; padding: 0; }
+.fl-card .pf-c-form__group, .fl-card .form-group { margin: 0 0 var(--space-5); }
+.fl-card label, .fl-card .pf-c-form__label { display: block; margin-bottom: 6px; font-size: var(--text-sm);
+  font-weight: var(--weight-bold); color: var(--text); }
+.fl-card .pf-c-form-control {
+  --pf-c-form-control--BorderTopColor: var(--neutral-border); --pf-c-form-control--BorderRightColor: var(--neutral-border);
+  --pf-c-form-control--BorderBottomColor: var(--neutral-border); --pf-c-form-control--BorderLeftColor: var(--neutral-border);
+  --pf-c-form-control--hover--BorderBottomColor: var(--primary); --pf-c-form-control--focus--BorderBottomColor: var(--primary);
+  height: var(--field-h); padding: 0 var(--space-3); font-size: var(--text-md); color: var(--text); background: var(--surface);
+  border: 1px solid var(--neutral-border); border-radius: var(--radius-sm); }
+.fl-card .pf-c-form-control:focus { border-color: var(--primary); outline: none; box-shadow: var(--focus-ring); }
+.fl-card .pf-c-form-control[aria-invalid="true"] { border-color: var(--deny-solid); }
+.fl-card #username { font-family: var(--font-mono); letter-spacing: 0.02em; }
+.fl-card .pf-c-input-group { gap: 0; background: transparent; }
+.fl-card .pf-c-input-group::before, .fl-card .pf-c-input-group::after { display: none; }
+.fl-card .pf-c-form-control::after { display: none; }
+.fl-card .pf-c-input-group .pf-c-form-control { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.fl-card .pf-c-button.pf-m-control { height: var(--field-h); min-width: var(--field-h); color: var(--text-muted);
+  background: var(--surface-2); border: 1px solid var(--neutral-border); border-left: 0;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
+.fl-card .pf-c-button.pf-m-control::after { display: none; }
+.fl-card .pf-c-form__helper-text, .fl-card #input-error { display: block; margin-top: 6px; color: var(--deny-fg); font-size: var(--text-sm); }
+
+.fl-card #kc-form-buttons { margin: var(--space-6) 0 0; }
+.fl-card #kc-login.pf-c-button.pf-m-primary {
+  --pf-c-button--m-primary--BackgroundColor: var(--primary); --pf-c-button--m-primary--hover--BackgroundColor: var(--primary-hover);
+  --pf-c-button--m-primary--focus--BackgroundColor: var(--primary-hover); --pf-c-button--m-primary--active--BackgroundColor: var(--primary-hover);
+  width: 100%; height: var(--field-h); font-size: var(--text-md); font-weight: var(--weight-bold); color: var(--on-primary);
+  background: var(--primary); border: 0; border-radius: var(--radius-sm); cursor: pointer;
+  transition: background var(--duration-fast) var(--ease); }
+.fl-card #kc-login:hover { background: var(--primary-hover); }
+.fl-card #kc-login:focus-visible { box-shadow: var(--focus-ring); }
+.fl-card #kc-login:disabled { opacity: 0.7; cursor: progress; }
+
+/* Identifiant déjà saisi (étapes suivantes du flux) */
+.fl-card #kc-username { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2);
+  padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); background: var(--surface-2); }
+.fl-card #kc-attempted-username { margin: 0; font-family: var(--font-mono); font-size: var(--text-md); }
+
+/* Messages (PatternFly alert) */
+.fl-card .pf-c-alert { display: flex; gap: var(--space-2); align-items: flex-start; margin: 0 0 var(--space-5);
+  padding: var(--space-3); border-radius: var(--radius-sm); border: 1px solid transparent; box-shadow: none; }
+.fl-card .pf-c-alert::before { display: none; }
+.fl-card .pf-c-alert.pf-m-danger  { background: var(--deny-bg); color: var(--deny-fg); border-color: var(--deny-border); }
+.fl-card .pf-c-alert.pf-m-warning { background: var(--wait-bg); color: var(--wait-fg); border-color: var(--wait-border); }
+.fl-card .pf-c-alert.pf-m-success { background: var(--ok-bg); color: var(--ok-fg); border-color: var(--ok-border); }
+.fl-card .pf-c-alert.pf-m-info    { background: var(--info-bg); color: var(--info-fg); border-color: var(--info-border); }
+.fl-card .pf-c-alert__icon, .fl-card .pf-c-alert__title { color: inherit; font-size: var(--text-sm); }
+.fl-card .pf-c-alert__title { font-weight: var(--weight-bold); margin: 0; }
+
+/* Bloc démonstration */
+.fl-demo { width: 100%; max-width: 440px; padding: var(--space-3) var(--space-4); border-radius: var(--radius-md);
+  background: var(--impact-bg); color: var(--impact-fg); border: 1px dashed var(--impact-border);
+  font-size: var(--text-sm); line-height: var(--leading-sm); }
+.fl-demo code, .fl-demo span { font-family: var(--font-mono); font-size: var(--text-xs); }
+.fl-demo code { background: rgb(255 255 255 / 0.6); padding: 1px 6px; border-radius: 4px; color: inherit; }
+.fl-demo span { display: block; margin-top: 2px; }
+.fl-demo span.fl-demo__id { display: inline; white-space: nowrap; margin: 0; }
+
+/* --- Variantes par portail ---------------------------------------------- */
+[data-portal="citizen"] .login-pf .card-pf.fl-card,
+[data-portal="citizen"] .card-pf.fl-card { border-radius: var(--radius-xl); }
+[data-portal="citizen"] .fl-card #kc-login { border-radius: var(--radius-pill); }
+
+[data-portal="supervision"] .fl-brand { background: #070b09; border-right: 1px solid var(--border); }
+[data-portal="supervision"] .fl-demo { color: var(--impact-fg); }
+[data-portal="supervision"] .fl-demo code { background: rgb(0 0 0 / 0.3); }
+
+/* --- Mobile : le panneau devient un en-tête compact ---------------------- */
+@media (max-width: 860px) {
+  .fl-shell { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+  .fl-brand { padding: var(--space-5) var(--space-4) var(--space-6); gap: var(--space-4); }
+  .fl-brand::before { width: 200px; height: 200px; right: -50px; bottom: -50px; }
+  .fl-brand__body { margin: 0; }
+  .fl-brand__motto { font-size: var(--text-lg); line-height: var(--leading-lg); margin-bottom: var(--space-2); }
+  .fl-brand__lead { margin: 0; font-size: var(--text-sm); }
+  .fl-brand__points, .fl-brand__foot { display: none; }
+  .fl-main { justify-content: flex-start; padding: var(--space-5) var(--space-4) var(--space-8); }
+  .login-pf .card-pf.fl-card { padding: var(--space-6) var(--space-5); }
+}

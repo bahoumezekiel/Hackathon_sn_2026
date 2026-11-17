@@ -16,7 +16,8 @@ from datetime import datetime, timedelta
 from psycopg.types.json import Jsonb
 
 from . import audit, config, crypto, db, policy, registry_client, resilience
-from .predicates import PREDICATES, PredicateError, compute, display
+from .predicates import (ATTRIBUTES, ATTRIBUTES_CLAIM, PREDICATES, PredicateError, compute,
+                         disclose, display)
 
 log = logging.getLogger("fasolink.service")
 
@@ -56,46 +57,55 @@ def resolve_identity(conn, citizen: dict) -> dict:
 # ---------------------------------------------------------------- demande
 
 def submit_verification(*, admin: dict, agent_id, citizen: dict, purpose_code: str,
-                        predicates: list[str], justification: str | None) -> dict:
+                        predicates: list[str], justification: str | None,
+                        attributes: list[str] | None = None) -> dict:
     predicates = list(OrderedDict.fromkeys(predicates))
-    unknown = [p for p in predicates if p not in PREDICATES]
+    attributes = list(OrderedDict.fromkeys(attributes or []))
+    if not predicates and not attributes:
+        raise BadRequest("Aucune information demandée")
+    unknown = [p for p in predicates if p not in PREDICATES] + \
+              [a for a in attributes if a not in ATTRIBUTES]
     if unknown:
-        raise BadRequest(f"Prédicat(s) inconnu(s) : {', '.join(unknown)}")
+        raise BadRequest(f"Information(s) inconnue(s) : {', '.join(unknown)}")
 
     with db.tx() as c:
         identity = resolve_identity(c, citizen)
 
-    by_registry: dict[str, list[str]] = OrderedDict()
+    # Une demande par registre interrogé (ex. recrutement : état civil + nationalité + casier)
+    by_registry: dict[str, dict] = OrderedDict()
     for p in predicates:
-        by_registry.setdefault(PREDICATES[p]["registry"], []).append(p)
+        by_registry.setdefault(PREDICATES[p]["registry"], {"p": [], "a": []})["p"].append(p)
+    for a in attributes:
+        by_registry.setdefault(ATTRIBUTES[a]["registry"], {"p": [], "a": []})["a"].append(a)
 
-    results = [_submit_one(admin, agent_id, identity, code, preds, purpose_code, justification)
-               for code, preds in by_registry.items()]
+    results = [_submit_one(admin, agent_id, identity, code, items["p"], items["a"],
+                           purpose_code, justification)
+               for code, items in by_registry.items()]
     return {"identity_status": identity["identity_status"], "results": results}
 
 
-def _submit_one(admin, agent_id, identity, registry_code, preds, purpose_code, justification):
+def _submit_one(admin, agent_id, identity, registry_code, preds, attrs, purpose_code, justification):
     with db.tx() as c:
         reg = c.execute("SELECT * FROM administrative_registry WHERE code=%s",
                         (registry_code,)).fetchone()
         decision = policy.evaluate(c, admin_id=admin["id"], registry_id=reg["id"],
                                    identity_id=identity["id"], purpose_code=purpose_code,
-                                   predicates=preds, justification=justification)
+                                   predicates=preds, attributes=attrs, justification=justification)
         req = c.execute(
             """INSERT INTO access_request
                  (requester_admin_id, requester_user_id, identity_id, registry_id, policy_id,
                   purpose_code, legal_basis, justification, requested_predicates,
-                  status, decision, decision_reason, completed_at)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
+                  requested_attributes, status, decision, decision_reason, completed_at)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
             (admin["id"], agent_id, identity["id"], reg["id"], decision.policy_id, purpose_code,
              decision.legal_basis or "Aucune base légale applicable", justification, Jsonb(preds),
-             "PROCESSING" if decision.allowed else "DENIED", decision.effect, decision.reason,
-             None if decision.allowed else db.utcnow())).fetchone()
+             Jsonb(attrs), "PROCESSING" if decision.allowed else "DENIED", decision.effect,
+             decision.reason, None if decision.allowed else db.utcnow())).fetchone()
         common = dict(request_id=req["id"], identity_id=identity["id"], actor_admin_id=admin["id"],
                       actor_user_id=agent_id, registry_id=reg["id"], purpose_code=purpose_code)
-        audit.log(c, "ACCESS_REQUESTED", decision="N/A", attributes=preds, **common)
-        audit.log(c, "POLICY_DECISION", decision=decision.effect, attributes=decision.granted,
-                  **common)
+        audit.log(c, "ACCESS_REQUESTED", decision="N/A", attributes=preds + attrs, **common)
+        audit.log(c, "POLICY_DECISION", decision=decision.effect,
+                  attributes=decision.granted + decision.granted_attributes, **common)
 
     if decision.allowed:
         execute(req["id"])
@@ -111,6 +121,7 @@ def execute(request_id, *, is_retry: bool = False) -> None:
         decision = policy.evaluate(c, admin_id=req["requester_admin_id"], registry_id=reg["id"],
                                    identity_id=req["identity_id"], purpose_code=req["purpose_code"],
                                    predicates=req["requested_predicates"],
+                                   attributes=req["requested_attributes"],
                                    justification=req["justification"])
         if is_retry:
             audit.log(c, "REQUEST_RETRIED", decision="N/A", service_mode=req["service_mode"],
@@ -138,29 +149,35 @@ def execute(request_id, *, is_retry: bool = False) -> None:
     except registry_client.RegistryUnavailable as exc:
         return _handle_unavailable(req, reg, decision, str(exc), is_retry)
 
+    params = decision.predicate_params
     try:
-        values = {p: compute(p, record, req["purpose_code"]) for p in decision.granted}
+        values = {p: compute(p, record, req["purpose_code"], params.get(p)) for p in decision.granted}
+        disclosed = disclose(decision.granted_attributes, record) if decision.granted_attributes else None
     except PredicateError as exc:
         return _fail(req, "PREDICATE_ERROR", str(exc))
     finally:
-        del record  # minimisation : la donnée brute n'est ni conservée ni transmise
+        del record  # minimisation : le reste de l'enregistrement n'est ni conservé ni transmis
 
-    source_fields = sorted({f for p in decision.granted for f in PREDICATES[p]["source_fields"]})
+    source_fields = sorted({f for p in decision.granted for f in PREDICATES[p]["source_fields"]}
+                           | set(decision.granted_attributes))
+    transmitted = decision.granted + decision.granted_attributes
     now = db.utcnow()
     with db.tx() as c:
         c.execute("""INSERT INTO identity_verification (identity_id, request_id, verification_type,
                          verification_status, source_system, verified_at)
                      VALUES (%s,%s,%s,'SUCCESS',%s,now())""",
-                  (req["identity_id"], req["id"], ",".join(decision.granted), reg["code"]))
+                  (req["identity_id"], req["id"], ",".join(transmitted)[:40], reg["code"]))
         for p, v in values.items():
-            _issue_attestation(c, req, p, v, observed_at=now, from_cache=False)
+            _issue_attestation(c, req, p, v, observed_at=now, from_cache=False, params=params.get(p))
+        if disclosed:
+            _issue_attestation(c, req, ATTRIBUTES_CLAIM, disclosed, observed_at=now, from_cache=False)
         c.execute("""UPDATE access_request SET status='COMPLETED', decision=%s, decision_reason=%s,
                          completed_at=now(), next_retry_at=NULL WHERE id=%s""",
                   (decision.effect, decision.reason, req["id"]))
         mode = req["service_mode"]
         audit.log(c, "REGISTRY_QUERIED", decision=decision.effect, attributes=source_fields,
                   service_mode=mode, **_common(req))
-        audit.log(c, "ATTESTATION_ISSUED", decision=decision.effect, attributes=decision.granted,
+        audit.log(c, "ATTESTATION_ISSUED", decision=decision.effect, attributes=transmitted,
                   service_mode=mode, **_common(req))
     # Cache Redis du mode dégradé (prédicats seulement, durée fixée par la politique)
     for p, v in values.items():
@@ -174,19 +191,22 @@ def _common(req) -> dict:
                 registry_id=req["registry_id"], purpose_code=req["purpose_code"])
 
 
-def _issue_attestation(c, req, predicate, value, *, observed_at, from_cache):
+def _issue_attestation(c, req, predicate, value, *, observed_at, from_cache, params=None):
     audience = c.execute("SELECT code FROM administration WHERE id=%s",
                          (req["requester_admin_id"],)).fetchone()["code"]
     att_id = uuid.uuid4()
     issued = db.utcnow()
     expires = issued + timedelta(seconds=config.ATTESTATION_TTL_S)
-    token = crypto.sign({
+    claims = {
         "iss": "fasolink", "aud": audience, "jti": str(att_id),
         "iat": int(issued.timestamp()), "exp": int(expires.timestamp()),
         "request_id": str(req["id"]), "purpose": req["purpose_code"],
         "predicate": predicate, "value": value,
         "observed_at": observed_at.isoformat(), "degraded": from_cache,
-    })
+    }
+    if params:
+        claims["conditions"] = params  # ex. bornes d'âge fixées par la politique
+    token = crypto.sign(claims)
     c.execute(
         """INSERT INTO attestation (id, request_id, identity_id, registry_id, audience_admin_id,
                purpose_code, predicate, predicate_value, observed_at, issued_at, expires_at,
@@ -220,8 +240,9 @@ def _handle_unavailable(req, reg, decision, error: str, is_retry: bool) -> None:
         audit.log(c, "REGISTRY_UNAVAILABLE", decision="N/A", service_mode=req["service_mode"],
                   **_common(req))
 
-        # Niveau 2 : réutiliser une réponse récente du cache Redis, si la politique l'autorise
-        if decision.degraded_cache_ttl_s > 0 and not is_retry:
+        # Niveau 2 : réutiliser une réponse récente du cache Redis, si la politique l'autorise.
+        # Jamais pour des attributs (données personnelles brutes) : uniquement des Oui/Non.
+        if decision.degraded_cache_ttl_s > 0 and not is_retry and not decision.granted_attributes:
             cached = {}
             for p in decision.granted:
                 hit = resilience.cache_get(req["identity_id"], reg["code"], p,
@@ -232,7 +253,7 @@ def _handle_unavailable(req, reg, decision, error: str, is_retry: bool) -> None:
                 for p, hit in cached.items():
                     _issue_attestation(c, req, p, hit["value"],
                                        observed_at=datetime.fromisoformat(hit["observed_at"]),
-                                       from_cache=True)
+                                       from_cache=True, params=decision.predicate_params.get(p))
                 c.execute("""UPDATE access_request SET status='COMPLETED', decision=%s,
                                  decision_reason=%s, service_mode='DEGRADED_CACHE', completed_at=now()
                              WHERE id=%s""",
@@ -312,8 +333,15 @@ def process_due_queue() -> int:
 def request_view(request_id, *, admin_id=None) -> dict:
     with db.tx() as c:
         req = c.execute(
-            """SELECT q.*, r.code AS registry_code, r.name AS registry_name
-               FROM access_request q JOIN administrative_registry r ON r.id = q.registry_id
+            """SELECT q.*, r.code AS registry_code, r.name AS registry_name,
+                      coalesce(p.label, q.purpose_code) AS purpose_label,
+                      coalesce(dp.predicate_params, '{}'::jsonb) AS predicate_params,
+                      coalesce((SELECT jsonb_agg(d->>'document') FROM jsonb_array_elements(p.replaces) d
+                                WHERE d->>'registry' = r.code), '[]'::jsonb) AS documents_replaced
+               FROM access_request q
+               JOIN administrative_registry r ON r.id = q.registry_id
+               LEFT JOIN purpose p ON p.code = q.purpose_code
+               LEFT JOIN data_access_policy dp ON dp.id = q.policy_id
                WHERE q.id=%s""", (request_id,)).fetchone()
         if not req or (admin_id and req["requester_admin_id"] != admin_id):
             raise NotFound("Demande introuvable")
@@ -325,15 +353,19 @@ def request_view(request_id, *, admin_id=None) -> dict:
         "request_id": str(req["id"]),
         "registry": {"code": req["registry_code"], "name": req["registry_name"]},
         "purpose_code": req["purpose_code"],
+        "purpose_label": req["purpose_label"],
         "status": req["status"],
         "decision": req["decision"],
         "decision_reason": req["decision_reason"],
         "service_mode": req["service_mode"],
         "next_retry_at": req["next_retry_at"],
+        # Pièce justificative que le citoyen n'a pas eu à fournir (si la demande aboutit)
+        "documents_replaced": req["documents_replaced"] if req["status"] == "COMPLETED" else [],
         "attestations": [{
             "predicate": a["predicate"],
             "value": a["predicate_value"],
-            "display": display(a["predicate"], a["predicate_value"]),
+            "display": display(a["predicate"], a["predicate_value"],
+                               req["predicate_params"].get(a["predicate"])),
             "observed_at": a["observed_at"],
             "expires_at": a["expires_at"],
             "served_from_cache": a["served_from_cache"],

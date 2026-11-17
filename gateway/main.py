@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 
 from . import audit, config, crypto, db, policy, registry_client, resilience, service
 from .auth import agent_auth, citizen_auth, keycloak_ready, supervisor_auth
-from .predicates import PREDICATES, display
+from .predicates import ATTRIBUTES, display
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s : %(message)s")
 log = logging.getLogger("fasolink")
@@ -86,7 +86,10 @@ class CitizenRef(BaseModel):
 class VerificationIn(BaseModel):
     citizen: CitizenRef
     purpose_code: str
-    predicates: list[str] = Field(min_length=1)
+    predicates: list[str] = Field(default_factory=list,
+                                  description="Questions fermées, ex. est_majeur → Oui/Non")
+    attributes: list[str] = Field(default_factory=list,
+                                  description="Champs demandés, ex. nom, pere (si la politique l'autorise)")
     justification: str | None = None
 
 
@@ -172,24 +175,49 @@ def verify_attestation(body: AttestationIn):
 
 @app.get("/v1/purposes", tags=["administration"])
 def purposes(auth=Depends(agent_auth)):
-    """Finalités que cette administration est autorisée à invoquer."""
+    """Démarches que cette administration peut effectuer, regroupées par finalité.
+
+    Une finalité peut couvrir plusieurs registres (ex. candidature à un recrutement :
+    état civil + nationalité + casier) : un seul envoi interroge alors chacun d'eux."""
     with db.tx() as c:
         rows = c.execute(
             """SELECT p.policy_code, p.purpose_code, p.legal_basis, p.allowed_predicates,
-                      p.requires_consent, r.code AS registry_code, r.name AS registry_name
-               FROM data_access_policy p JOIN administrative_registry r ON r.id = p.registry_id
-               WHERE p.requesting_admin_id=%s AND p.is_active ORDER BY p.policy_code""",
+                      p.allowed_attributes, p.predicate_params, p.requires_consent,
+                      r.code AS registry_code, r.name AS registry_name,
+                      pu.label, pu.description, pu.replaces, pu.decision_note
+               FROM data_access_policy p
+               JOIN administrative_registry r ON r.id = p.registry_id
+               LEFT JOIN purpose pu ON pu.code = p.purpose_code
+               WHERE p.requesting_admin_id=%s AND p.is_active
+               ORDER BY p.purpose_code, r.code""",
             (auth["admin"]["id"],)).fetchall()
-    return {"administration": auth["admin"]["name"], "purposes": rows,
-            "predicates": {k: v["label"] for k, v in PREDICATES.items()}}
+    grouped: dict[str, dict] = {}
+    for row in rows:
+        g = grouped.setdefault(row["purpose_code"], {
+            "purpose_code": row["purpose_code"], "label": row["label"] or row["purpose_code"],
+            "description": row["description"], "decision_note": row["decision_note"],
+            "replaces": row["replaces"] or [], "checks": []})
+        g["checks"].append({
+            "policy_code": row["policy_code"], "registry_code": row["registry_code"],
+            "registry_name": row["registry_name"], "legal_basis": row["legal_basis"],
+            "requires_consent": row["requires_consent"],
+            "predicates": [{"code": p, "label": display(p, None, row["predicate_params"].get(p))
+                            .removesuffix(" : None")} for p in row["allowed_predicates"]],
+            "attributes": [{"code": a, "label": ATTRIBUTES[a]["label"]}
+                           for a in row["allowed_attributes"] if a in ATTRIBUTES],
+        })
+    return {"administration": auth["admin"]["name"], "purposes": list(grouped.values())}
 
 
 @app.post("/v1/verifications", tags=["administration"])
 def create_verification(body: VerificationIn, auth=Depends(agent_auth)):
-    """Pose une question (ex. est_majeur) et reçoit une réponse Oui/Non signée."""
+    """Pose des questions (ex. est_majeur → Oui/Non) ou demande des attributs autorisés.
+
+    Les informations sont regroupées par registre ; chaque registre fait l'objet d'une
+    décision OPA, d'une attestation signée et d'une trace d'audit distinctes."""
     return service.submit_verification(
         admin=auth["admin"], agent_id=auth["agent_id"], citizen=body.citizen.model_dump(),
-        purpose_code=body.purpose_code, predicates=body.predicates,
+        purpose_code=body.purpose_code, predicates=body.predicates, attributes=body.attributes,
         justification=body.justification)
 
 
@@ -210,6 +238,12 @@ def citizen_history(identity_id=Depends(citizen_auth)):
             """SELECT q.id, q.created_at, q.completed_at, q.purpose_code, q.status, q.decision,
                       q.decision_reason, q.service_mode, q.justification,
                       a.name AS administration, r.name AS registry, r.code AS registry_code,
+                      coalesce(pu.label, q.purpose_code) AS purpose_label,
+                      coalesce(dp.predicate_params, '{}'::jsonb) AS predicate_params,
+                      CASE WHEN q.status = 'COMPLETED' THEN
+                        coalesce((SELECT jsonb_agg(d->>'document') FROM jsonb_array_elements(pu.replaces) d
+                                  WHERE d->>'registry' = r.code), '[]'::jsonb)
+                      ELSE '[]'::jsonb END AS documents_avoided,
                       (SELECT coalesce(jsonb_agg(jsonb_build_object(
                                  'predicate', t.predicate, 'value', t.predicate_value,
                                  'from_cache', t.served_from_cache, 'observed_at', t.observed_at)
@@ -227,10 +261,14 @@ def citizen_history(identity_id=Depends(citizen_auth)):
                FROM access_request q
                JOIN administration a ON a.id = q.requester_admin_id
                JOIN administrative_registry r ON r.id = q.registry_id
+               LEFT JOIN purpose pu ON pu.code = q.purpose_code
+               LEFT JOIN data_access_policy dp ON dp.id = q.policy_id
                WHERE q.identity_id = %s
                ORDER BY q.created_at DESC LIMIT 200""", (identity_id,)).fetchall()
     for row in rows:
-        row["shared"] = [dict(s, display=display(s["predicate"], s["value"])) for s in row["shared"]]
+        params = row.pop("predicate_params")
+        row["shared"] = [dict(s, display=display(s["predicate"], s["value"], params.get(s["predicate"])))
+                         for s in row["shared"]]
     iue_hint = None
     if identity["iue_ciphertext"]:
         iue_hint = "••••" + crypto.decrypt(identity["iue_ciphertext"])[-4:]
@@ -269,7 +307,8 @@ def citizen_alert(body: AlertIn, identity_id=Depends(citizen_auth)):
 def citizen_consents(identity_id=Depends(citizen_auth)):
     with db.tx() as c:
         return c.execute(
-            """SELECT p.policy_code, p.purpose_code, a.name AS administration, r.name AS registry,
+            """SELECT p.policy_code, p.purpose_code, coalesce(pu.label, p.purpose_code) AS purpose_label,
+                      a.name AS administration, r.name AS registry,
                       (SELECT cc.consent_status FROM citizen_consent cc
                         WHERE cc.identity_id=%s AND cc.requesting_admin_id=p.requesting_admin_id
                           AND cc.purpose_code=p.purpose_code
@@ -277,6 +316,7 @@ def citizen_consents(identity_id=Depends(citizen_auth)):
                FROM data_access_policy p
                JOIN administration a ON a.id = p.requesting_admin_id
                JOIN administrative_registry r ON r.id = p.registry_id
+               LEFT JOIN purpose pu ON pu.code = p.purpose_code
                WHERE p.requires_consent AND p.is_active ORDER BY p.policy_code""",
             (identity_id,)).fetchall()
 
@@ -357,11 +397,34 @@ def supervision_requests():
     with db.tx() as c:
         return c.execute(
             """SELECT q.id, q.created_at, a.name AS administration, r.code AS registry,
-                      q.purpose_code, q.status, q.decision, q.service_mode, q.retry_count
+                      q.purpose_code, coalesce(pu.label, q.purpose_code) AS purpose_label,
+                      q.status, q.decision, q.service_mode, q.retry_count
                FROM access_request q
                JOIN administration a ON a.id = q.requester_admin_id
                JOIN administrative_registry r ON r.id = q.registry_id
+               LEFT JOIN purpose pu ON pu.code = q.purpose_code
                ORDER BY q.created_at DESC LIMIT 25""").fetchall()
+
+
+@app.get("/supervision/impact", tags=["supervision"], dependencies=[Depends(supervisor_auth)])
+def supervision_impact():
+    """Pièces justificatives que les citoyens n'ont pas eu à fournir, grâce aux échanges directs."""
+    with db.tx() as c:
+        by_document = c.execute(
+            """SELECT d->>'document' AS document, count(*) AS avoided
+               FROM access_request q
+               JOIN administrative_registry r ON r.id = q.registry_id
+               JOIN purpose pu ON pu.code = q.purpose_code
+               CROSS JOIN LATERAL jsonb_array_elements(pu.replaces) d
+               WHERE q.status = 'COMPLETED' AND d->>'registry' = r.code
+               GROUP BY 1 ORDER BY 2 DESC""").fetchall()
+        by_purpose = c.execute(
+            """SELECT coalesce(pu.label, q.purpose_code) AS purpose, count(*) AS requests,
+                      count(*) FILTER (WHERE q.status = 'COMPLETED') AS completed
+               FROM access_request q LEFT JOIN purpose pu ON pu.code = q.purpose_code
+               GROUP BY 1 ORDER BY 2 DESC""").fetchall()
+    return {"documents_avoided": sum(d["avoided"] for d in by_document),
+            "by_document": by_document, "by_purpose": by_purpose}
 
 
 @app.get("/supervision/alerts", tags=["supervision"], dependencies=[Depends(supervisor_auth)])
@@ -407,8 +470,8 @@ def demo_config():
     if not config.DEMO_MODE:
         raise HTTPException(404)
     with db.tx() as c:
-        admins = c.execute("SELECT code, name FROM administration "
-                           "WHERE code LIKE 'ADMIN_%%' ORDER BY code").fetchall()
+        admins = c.execute("SELECT code, name FROM administration WHERE code = ANY(%s) ORDER BY code",
+                           (list(config.DEMO_AGENTS),)).fetchall()
     data = json.loads((config.ROOT / "registries-mock" / "data" / "citoyens_fictifs.json")
                       .read_text(encoding="utf-8"))
     citizens = [{
@@ -420,8 +483,8 @@ def demo_config():
         "keycloak": {"url": config.KEYCLOAK_PUBLIC_URL, "realm": config.KEYCLOAK_REALM,
                      "client_id": config.KEYCLOAK_CLI_CLIENT},
         "demo_password": "demo",
-        "agents": [{"code": a["code"], "name": a["name"],
-                    "username": f"agent-{a['code'][-1].lower()}"} for a in admins],
+        "agents": [{"code": a["code"], "name": a["name"], "username": config.DEMO_AGENTS[a["code"]]}
+                   for a in admins],
         "supervisor": "superviseur",
         "citizens": citizens,
     }

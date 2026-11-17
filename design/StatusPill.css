@@ -1,0 +1,64 @@
+/* FasoLink — StatusPill & Verdict. Dépend de tokens.css. */
+
+.fl-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: var(--radius-pill);
+  border: 1px solid transparent;
+  font-size: 13px;
+  font-weight: var(--weight-bold);
+  line-height: 1;
+  white-space: nowrap;
+}
+.fl-pill--sm { height: 22px; padding: 0 8px; font-size: 12px; gap: 5px; }
+.fl-pill--lg { height: 32px; padding: 0 12px; font-size: 14px; }
+
+.fl-pill__icon { width: 14px; height: 14px; flex: none; }
+.fl-pill--sm .fl-pill__icon { width: 12px; height: 12px; }
+.fl-pill__count { font-family: var(--font-mono); font-weight: 600; opacity: 0.85; }
+
+.fl-pill--ok       { background: var(--ok-bg);       color: var(--ok-fg);       border-color: var(--ok-border); }
+.fl-pill--partial  { background: var(--info-bg);     color: var(--info-fg);     border-color: var(--info-border); }
+.fl-pill--deny     { background: var(--deny-bg);     color: var(--deny-fg);     border-color: var(--deny-border); }
+.fl-pill--wait     { background: var(--wait-bg);     color: var(--wait-fg);     border-color: var(--wait-border); }
+.fl-pill--retry    { background: var(--info-bg);     color: var(--info-fg);     border-color: var(--info-border); }
+.fl-pill--fail     { background: var(--neutral-bg);  color: var(--neutral-fg);  border-color: var(--neutral-border); }
+/* Mode dégradé : bordure pointillée = signal non coloré en plus du texte */
+.fl-pill--degraded { background: var(--degraded-bg); color: var(--degraded-fg); border: 1px dashed var(--degraded-border); }
+
+/* L'icône de l'attente tourne doucement (coupé si mouvement réduit) */
+.fl-pill--wait .fl-pill__icon { animation: fl-tick 2s steps(8) infinite; }
+@keyframes fl-tick { to { transform: rotate(360deg); } }
+
+/* --- Verdict Oui / Non --------------------------------------------------- */
+.fl-verdict {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 56px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-weight: var(--weight-bold);
+  justify-content: center;
+}
+.fl-verdict__icon { width: 15px; height: 15px; }
+.fl-verdict--yes     { background: var(--ok-solid);   color: var(--on-primary, #fff); }
+.fl-verdict--no      { background: var(--deny-solid); color: #fff; }
+.fl-verdict--unknown { background: var(--neutral-bg); color: var(--neutral-fg); }
+
+[data-portal="supervision"] .fl-verdict--no { color: #2a0a0f; }
+
+/* --- Logo (Logo.jsx) ------------------------------------------------------ */
+.fl-logo { display: inline-flex; align-items: center; gap: 10px; font-weight: var(--weight-bold); }
+.fl-logo__name { font-size: 18px; letter-spacing: -0.01em; }
+.fl-logo__tag {
+  font-size: var(--text-xs); line-height: var(--leading-xs); font-weight: var(--weight-bold);
+  padding: 2px 8px; border-radius: var(--radius-sm);
+  background: rgb(255 255 255 / 0.16); color: inherit;
+}
+[data-portal="supervision"] .fl-logo__tag { background: var(--neutral-bg); color: var(--text-2); }
