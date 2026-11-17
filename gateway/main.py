@@ -5,6 +5,7 @@ import threading
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from typing import Literal
 
 import httpx
 import jwt
@@ -53,7 +54,7 @@ app = FastAPI(
     description=(
         "Socle d'interopérabilité administrative — « Dites-le nous une fois ».\n\n"
         "**Authentification** : jeton d'accès Keycloak (realm `fasolink`). Pour un système "
-        "d'information : flux *client credentials* avec le client `admin-a`, `admin-b` ou `admin-c`. "
+        "d'information : flux *client credentials* avec le client `admin-a`, `admin-b`, `admin-c` ou `admin-d`. "
         "Cliquez sur **Authorize** et collez le jeton."),
     swagger_ui_parameters={"persistAuthorization": True},
 )
@@ -78,31 +79,31 @@ async def _bad_request(_req, exc):
 # ---------------------------------------------------------------- modèles
 
 class CitizenRef(BaseModel):
-    iue: str | None = None
-    registry: str | None = None
-    local_reference: str | None = None
+    iue: str | None = Field(default=None, max_length=64)
+    registry: str | None = Field(default=None, max_length=32)
+    local_reference: str | None = Field(default=None, max_length=64)
 
 
 class VerificationIn(BaseModel):
     citizen: CitizenRef
-    purpose_code: str
-    predicates: list[str] = Field(min_length=1)
-    justification: str | None = None
+    purpose_code: str = Field(max_length=64)
+    predicates: list[str] = Field(min_length=1, max_length=10)
+    justification: str | None = Field(default=None, max_length=500)
 
 
 class AttestationIn(BaseModel):
-    jws: str
+    jws: str = Field(max_length=8192)
 
 
 class AlertIn(BaseModel):
     request_id: uuid.UUID | None = None
     description: str = Field(min_length=3, max_length=2000)
-    channel: str = "WEB"
-    language: str = "fr"
+    channel: Literal["WEB", "VOICE", "SMS", "USSD"] = "WEB"
+    language: Literal["fr", "mos", "dyu"] = "fr"   # français, mooré, dioula
 
 
 class ConsentIn(BaseModel):
-    policy_code: str
+    policy_code: str = Field(max_length=64)
     grant: bool
 
 
@@ -111,8 +112,8 @@ class OutageIn(BaseModel):
 
 
 class AlertUpdateIn(BaseModel):
-    status: str
-    note: str | None = None
+    status: Literal["OPEN", "IN_REVIEW", "RESOLVED", "REJECTED"]
+    note: str | None = Field(default=None, max_length=1000)
 
 
 # ---------------------------------------------------------------- public
@@ -245,8 +246,6 @@ def citizen_integrity(_identity=Depends(citizen_auth)):
 @app.post("/citizen/alerts", tags=["citoyen"])
 def citizen_alert(body: AlertIn, identity_id=Depends(citizen_auth)):
     """Signaler un accès suspect (portail web ou assistant vocal)."""
-    if body.channel not in ("WEB", "VOICE", "SMS", "USSD"):
-        raise HTTPException(400, "Canal invalide")
     with db.tx() as c:
         event_id = None
         if body.request_id:
@@ -381,8 +380,6 @@ def supervision_alerts():
 @app.post("/supervision/alerts/{alert_id}", tags=["supervision"],
           dependencies=[Depends(supervisor_auth)])
 def supervision_update_alert(alert_id: uuid.UUID, body: AlertUpdateIn):
-    if body.status not in ("OPEN", "IN_REVIEW", "RESOLVED", "REJECTED"):
-        raise HTTPException(400, "Statut invalide")
     closed = body.status in ("RESOLVED", "REJECTED")
     with db.tx() as c:
         row = c.execute(

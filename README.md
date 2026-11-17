@@ -9,8 +9,8 @@ Les pièces circulent entre administrations, pas les usagers entre guichets.
 |---|---|---|
 | Base de données | **PostgreSQL 16** | Identités chiffrées, politiques, demandes, attestations, journal d'audit chaîné (append-only imposé par des triggers) |
 | API d'interopérabilité | **FastAPI** | Passerelle : API pure, sans écrans |
-| Interfaces | **React 18 + Vite** | 3 applications indépendantes, une par rôle, servies par nginx (qui relaie `/api` vers la passerelle) |
-| Authentification et rôles | **Keycloak 26** | Realm `fasolink`. Rôles `agent`, `supervisor` et `citizen`. Une administration correspond à un groupe Keycloak. Un client public par portail (*Authorization Code + PKCE S256*, imposé). Clients machine `admin-a`, `admin-b` et `admin-c` (*client credentials*) |
+| Interfaces | **React 19 + Vite 8** | 3 applications, une par rôle, dans un workspace npm (`frontend/`) qui partage le socle visuel, l'authentification et le client API. Servies par nginx (relais `/api`, CSP stricte) |
+| Authentification et rôles | **Keycloak 26** | Realm `fasolink`. Rôles `agent`, `supervisor` et `citizen`. Une administration correspond à un groupe Keycloak. Un client public par portail (*Authorization Code + PKCE S256*, imposé). Clients machine `admin-a` à `admin-d` (*client credentials*) |
 | Moteur de politiques | **Open Policy Agent 1.0** | [policies/fasolink.rego](policies/fasolink.rego) : finalité, justification, prédicats, consentement. La passerelle refuse tout accès si OPA ne répond pas. Les décisions sont journalisées |
 | Cache et résilience | **Redis 7.4** | Disjoncteurs partagés, cache du mode dégradé (prédicats uniquement), file de relance. PostgreSQL fait foi : si Redis perd sa file, elle est reconstruite |
 | Chiffrement et secrets | **Vault 1.18** (Transit) | Chiffrement AES-GCM de l'IUE et des références locales, empreintes HMAC, signature Ed25519 des attestations. **Aucune clé ne sort de Vault** ; la passerelle a un jeton à privilèges minimaux |
@@ -19,7 +19,7 @@ Les pièces circulent entre administrations, pas les usagers entre guichets.
 
 ## Démarrage
 
-Prérequis : Docker Desktop, Python 3.12+ (uniquement pour les scripts).
+Prérequis : Docker Desktop (WSL 2 sous Windows), Python 3.12+ pour les scripts (`pip install httpx` pour `demo_epreuve.py`). Node.js 22.12+ seulement pour développer les interfaces hors Docker.
 
 ```powershell
 python scripts/init_env.py          # une fois : secrets aléatoires (.env) + realm Keycloak
@@ -29,7 +29,7 @@ python scripts/demo_epreuve.py      # rejoue l'épreuve : 28 vérifications
 
 | Application | Adresse | Compte de démo (mot de passe `demo`) |
 |---|---|---|
-| **Portail administration** | http://localhost:3001 | `agent-a`, `agent-b` ou `agent-c` |
+| **Portail administration** | http://localhost:3001 | `agent-a`, `agent-b`, `agent-c` (un cas de l'épreuve chacun) ou `agent-d` (Direction des concours : dossier complet, 3 pièces) |
 | **Portail citoyen** | http://localhost:3002 | IUE en minuscules (`bf1998000123`), ou référence d'état civil sans IUE (`ec-fdg-2001-000222`) |
 | **Portail supervision** | http://localhost:3003 | `superviseur` |
 | API (Swagger) | http://localhost:8000/docs | jeton Keycloak |
@@ -39,7 +39,44 @@ Utilisez `localhost` (et non `127.0.0.1`) : c'est l'adresse déclarée dans Keyc
 
 **Plusieurs rôles en même temps :** la session Keycloak est partagée par tous les onglets d'un même navigateur. Pour montrer les trois rôles côte à côte, ouvrez chaque portail dans un profil ou une fenêtre privée différente. Sinon, chaque portail propose « se connecter avec un autre compte » quand le rôle ne correspond pas.
 
-**Développer un portail sans Docker** (la passerelle et Keycloak doivent tourner) : `cd portal-agent && npm install && npm run dev`. Vite relaie `/api` vers `localhost:8000`.
+### Interfaces : configuration et démarrage
+
+Les trois portails et la page de connexion n'ont rien à configurer pour la démonstration : `docker compose up -d --build` construit une image nginx par portail à partir du workspace `frontend/`.
+
+| Réglage | Où | Rôle |
+|---|---|---|
+| `VITE_KEYCLOAK_URL` | argument de build (`frontend/Dockerfile`, défaut `http://localhost:8080`) | Adresse de Keycloak vue par le navigateur, intégrée au JavaScript |
+| `KEYCLOAK_URL` | environnement du conteneur (`docker-compose.yml`) | Même adresse, autorisée par la politique de sécurité du contenu (CSP) de nginx. Doit être identique à `VITE_KEYCLOAK_URL` |
+| `FASOLINK_DEMO_MODE` | environnement de la passerelle | `1` : usagers fictifs, case « Démonstration » et simulation de panne visibles. `0` : tout cela disparaît des interfaces |
+| Thème de connexion | `infra/keycloak/themes/fasolink/` | Monté dans Keycloak ; activé par `scripts/init_env.py` (`loginTheme`), avec la langue française et la protection contre les essais de mots de passe |
+
+**Reconstruire un seul portail** sans réinitialiser la base :
+
+```powershell
+docker compose up -d --build --no-deps portal-citizen     # ou portal-agent, portal-supervision
+```
+
+**Développer une interface avec rechargement à chaud** (le reste de la plateforme tourne dans Docker) :
+
+```powershell
+docker compose stop portal-agent          # libère le port 3001
+cd frontend
+npm install                               # une fois, installe les trois portails et le socle partagé
+npm run dev -w agent                      # http://localhost:3001 ; citizen → 3002, supervision → 3003
+npm run build -w agent                    # vérifie la compilation de production
+```
+
+Vite relaie `/api` vers la passerelle (`localhost:8000`), comme nginx en production. Le code commun (styles, polices, session Keycloak, client API, composants) est dans `frontend/shared/` : une modification s'applique aux trois portails.
+
+**Modifier la page de connexion :** Keycloak tourne en mode développement, sans cache de thème. Il suffit de modifier les fichiers de `infra/keycloak/themes/fasolink/login/` puis de recharger la page. Après une modification du realm dans `scripts/init_env.py`, relancez le script, puis `docker compose up -d --force-recreate keycloak`.
+
+**Dépannage**
+
+- *`vault-init` échoue avec « illegal option »* : un script a été extrait avec des fins de ligne Windows. Le fichier `.gitattributes` l'évite. Sur un clone existant : `git add --renormalize .` puis `git checkout -- .`.
+- *Boucle de connexion, ou « Invalid redirect uri »* : utilisez `localhost`, pas `127.0.0.1`.
+- *Port 3001 à 3003 déjà occupé* : un serveur `npm run dev` tourne encore ; arrêtez-le, ou arrêtez le conteneur du portail correspondant.
+- *Compte bloqué après plusieurs erreurs de mot de passe* : attendez une minute, ou débloquez-le dans la console Keycloak (realm `fasolink`, Utilisateurs).
+- *Micro de l'assistant inactif* : la reconnaissance vocale fonctionne dans Chrome et Edge, sur `localhost` ou en HTTPS, après autorisation du micro.
 
 **Jeton machine** (système d'information d'une administration) :
 
@@ -64,10 +101,11 @@ curl -X POST http://localhost:8080/realms/fasolink/protocol/openid-connect/token
 ## Scénario pour le jury (environ 5 minutes)
 
 1. **Supervision** : montrez le *socle technique* (5 composants en vert).
-2. **Administration** → Administration A, chip *Awa Ouédraogo*, Vérifier : **Majeur : Oui**. Ouvrez l'attestation et cliquez « Vérifier la signature ».
-3. Cochez « Tenter aussi d'obtenir la nationalité » → **refus OPA** pour la nationalité, la majorité reste accordée.
+2. **Administration** (`agent-a`) → usager fictif *Awa Ouédraogo*, « Interroger le registre » : **Majeur : Oui**. Cliquez « Vérifier la signature » sous la réponse.
+   - **Dossier complet** (`agent-d`) : choisir *Awa Ouédraogo*, laisser les 3 pièces cochées, « Vérifier les 3 pièces » : acte de naissance, certificat de nationalité et extrait de casier répondent **Oui** en une seule action. Dans l'espace citoyen d'Awa ouvert à côté, chaque consultation déclenche une notification en moins de 3 secondes (cloche + alerte, et notification du système si elle est activée).
+3. Cochez la case *Démonstration* (« demander aussi Nationalité burkinabè ») → **refus OPA** pour la nationalité, la majorité reste accordée.
 4. **Citoyen** → `bf1998000123` / `demo` : les accès apparaissent en direct. Assistant vocal : « Qui a consulté mes données ? », puis « Je veux signaler le dernier accès ».
-5. **Supervision** → l'alerte arrive. Cliquez « Simuler une panne » sur l'état civil.
+5. **Supervision** → l'alerte arrive : « Prendre en charge », puis « Résoudre » avec une note. Cliquez « Simuler une panne » sur l'état civil.
 6. **Administration** → Awa : **mode dégradé**. *Adama* : **en attente**.
 7. **Supervision** → « Rétablir le registre » : la carte d'Adama se met à jour toute seule.
 
@@ -86,12 +124,16 @@ gateway/               FastAPI : API d'interopérabilité
   registry_client.py   Appels aux registres derrière le disjoncteur
 policies/              Règles OPA (.rego) et leurs tests
 registries-mock/       3 registres simulés + citoyens fictifs (remplaçables par ceux du jury)
-portal-agent/          React : écran de l'administration demandeuse        → :3001
-portal-citizen/        React : historique des accès + assistant vocal       → :3002
-portal-supervision/    React : registres, socle, alertes, intégrité         → :3003
+frontend/              Workspace npm des portails React (une image Docker par portail)
+  shared/              Socle commun : styles et polices, session Keycloak, client API, composants
+  agent/               Écran de l'administration demandeuse                → :3001
+  citizen/             Historique des accès, assistant vocal, consentements → :3002
+  supervision/         Registres, socle, flux, alertes, intégrité du journal → :3003
+  nginx/               Configuration nginx des portails (relais /api, en-têtes de sécurité)
 db/migrations/         Schéma PostgreSQL
 infra/vault/           Configuration de Vault (clés Transit, politique de la passerelle)
 infra/keycloak/        Realm généré par scripts/init_env.py (non versionné)
+  themes/fasolink/     Thème de la page de connexion (FreeMarker + CSS, polices OFL embarquées)
 scripts/               init_env, seed_demo, demo_epreuve
 ```
 

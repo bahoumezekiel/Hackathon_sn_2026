@@ -86,7 +86,7 @@ services:
     restart: "no"
 
   keycloak:
-    image: quay.io/keycloak/keycloak:26.0
+    image: quay.io/keycloak/keycloak:26.0.8   # version figée : le thème dépend de ses scripts
     command: ["start-dev", "--import-realm"]
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
@@ -98,6 +98,7 @@ services:
     ports: ["127.0.0.1:8080:8080"]
     volumes:
       - ./infra/keycloak/realm-fasolink.json:/opt/keycloak/data/import/realm-fasolink.json:ro
+      - ./infra/keycloak/themes/fasolink:/opt/keycloak/themes/fasolink:ro
     healthcheck:
       test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q '\"UP\"' <&3"]
       interval: 5s
@@ -163,22 +164,28 @@ services:
 
   # ------------------------------------------------------------ portails React (un par rôle)
   portal-agent:
-    build: ./portal-agent
+    build: { context: ./frontend, args: { APP: agent } }
     image: fasolink/portal-agent:dev
+    environment:
+      KEYCLOAK_URL: http://localhost:8080   # autorisé par la politique de sécurité du contenu
     ports: ["127.0.0.1:3001:80"]
     depends_on:
       gateway: { condition: service_healthy }
 
   portal-citizen:
-    build: ./portal-citizen
+    build: { context: ./frontend, args: { APP: citizen } }
     image: fasolink/portal-citizen:dev
+    environment:
+      KEYCLOAK_URL: http://localhost:8080
     ports: ["127.0.0.1:3002:80"]
     depends_on:
       gateway: { condition: service_healthy }
 
   portal-supervision:
-    build: ./portal-supervision
+    build: { context: ./frontend, args: { APP: supervision } }
     image: fasolink/portal-supervision:dev
+    environment:
+      KEYCLOAK_URL: http://localhost:8080
     ports: ["127.0.0.1:3003:80"]
     depends_on:
       gateway: { condition: service_healthy }

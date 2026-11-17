@@ -23,7 +23,7 @@ deny(reason) := {"effect": "DENY", "reason": reason, "granted": []}
 
 decision := deny("Administration suspendue ou inconnue") if {
 	object.get(input, ["administration", "status"], "") != "ACTIVE"
-} else := deny(sprintf("Aucune politique n'autorise cette administration à interroger ce registre pour la finalité %s", [input.purpose_code])) if {
+} else := deny("Aucune politique n'autorise cette administration à consulter ce registre pour la finalité déclarée") if {
 	not input.policy
 } else := deny(sprintf("Justification obligatoire (%d caractères minimum)", [min_justification_length])) if {
 	input.policy.requires_justification

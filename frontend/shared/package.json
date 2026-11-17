@@ -1,0 +1,20 @@
+{
+  "name": "@fasolink/shared",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./styles.css": "./styles.css",
+    "./auth": "./auth.js",
+    "./api": "./api.js",
+    "./format": "./format.js",
+    "./hooks": "./hooks.js",
+    "./ui": "./ui.jsx",
+    "./vite": "./vite.js"
+  },
+  "dependencies": {
+    "keycloak-js": "26.2.5",
+    "motion": "14.14.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  }
+}

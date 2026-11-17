@@ -15,7 +15,8 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 ENV = ROOT / ".env"
 REALM = ROOT / "infra" / "keycloak" / "realm-fasolink.json"
 DEMO_PASSWORD = "demo"  # comptes de démonstration uniquement
-ADMINS = {"ADMIN_A": "Administration A", "ADMIN_B": "Administration B", "ADMIN_C": "Administration C"}
+ADMINS = {"ADMIN_A": "Administration A", "ADMIN_B": "Administration B", "ADMIN_C": "Administration C",
+          "ADMIN_D": "Direction des concours"}
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--force", action="store_true")
@@ -46,6 +47,14 @@ if "POSTGRES_PASSWORD" not in env:  # .env absent, ancien format, ou --force
     print(f"Secrets générés : {ENV}")
 else:
     print(f"Secrets existants conservés : {ENV}")
+    # Administration ajoutée depuis la génération du .env : on complète sans toucher au reste
+    added = {f"{code}_CLIENT_SECRET": secrets.token_urlsafe(24) for code in ADMINS
+             if f"{code}_CLIENT_SECRET" not in env}
+    if added:
+        with ENV.open("a", encoding="utf-8") as f:
+            f.writelines(f"{k}={v}\n" for k, v in added.items())
+        env.update(added)
+        print(f"Secrets ajoutés : {', '.join(added)}")
 
 
 # ------------------------------------------------------------------ realm Keycloak
@@ -114,6 +123,11 @@ for c in citizens:
 realm = {
     "realm": "fasolink", "enabled": True, "displayName": "FasoLink",
     "accessTokenLifespan": 900, "sslRequired": "none",
+    "loginTheme": "fasolink",  # infra/keycloak/themes/fasolink
+    "internationalizationEnabled": True, "supportedLocales": ["fr"], "defaultLocale": "fr",
+    # Protection contre les essais de mots de passe en série (blocage temporaire, croissant)
+    "bruteForceProtected": True, "failureFactor": 5, "waitIncrementSeconds": 60,
+    "maxFailureWaitSeconds": 900, "permanentLockout": False,
     "roles": {"realm": [
         {"name": "agent", "description": "Agent ou système d'une administration demandeuse"},
         {"name": "supervisor", "description": "Supervision et protection des données"},

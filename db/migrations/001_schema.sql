@@ -253,7 +253,7 @@ CREATE INDEX idx_attestation_cache
 -- ---------------------------------------------------------------------
 CREATE TABLE audit_event (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    seq                 BIGINT GENERATED ALWAYS AS IDENTITY UNIQUE,
+    seq                 BIGINT NOT NULL UNIQUE,   -- attribué par trg_audit_chain, sous verrou
     request_id          UUID REFERENCES access_request(id),
     identity_id         UUID REFERENCES national_identity_reference(id),
     actor_admin_id      UUID REFERENCES administration(id),
@@ -283,6 +283,10 @@ LANGUAGE sql IMMUTABLE AS $$
         to_char(e.event_timestamp AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'))
 $$;
 
+-- Numéro d'ordre tiré APRÈS le verrou : l'ordre des numéros est exactement celui du chaînage,
+-- même quand plusieurs demandes sont journalisées en parallèle.
+CREATE SEQUENCE audit_event_seq;
+
 CREATE FUNCTION audit_event_chain() RETURNS trigger
 LANGUAGE plpgsql AS $$
 DECLARE
@@ -290,6 +294,7 @@ DECLARE
 BEGIN
     -- Sérialise les insertions pour garantir une chaîne linéaire
     PERFORM pg_advisory_xact_lock(hashtext('fasolink.audit_event'));
+    NEW.seq := nextval('fasolink.audit_event_seq');
     SELECT event_hash INTO prev FROM fasolink.audit_event ORDER BY seq DESC LIMIT 1;
     NEW.previous_hash := COALESCE(prev, '\x00'::bytea);           -- bloc de genèse
     NEW.event_hash    := digest(NEW.previous_hash
