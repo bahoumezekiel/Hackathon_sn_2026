@@ -121,7 +121,7 @@ export function Spinner() {
   return <span className="spinner" aria-hidden="true" />;
 }
 
-function Screen({ portal, title, children }) {
+export function Screen({ portal, title, children }) {
   return (
     <main className="screen">
       <div className="screen-card">
@@ -133,10 +133,9 @@ function Screen({ portal, title, children }) {
   );
 }
 
-/** Démarre un portail : connexion Keycloak, contrôle du rôle, puis rendu de l'application. */
-export function mountPortal({ session, role, roleLabel, portal, App }) {
+function createRenderer() {
   const root = createRoot(document.getElementById("root"));
-  const render = (node) =>
+  return (node) =>
     root.render(
       <StrictMode>
         <LazyMotion features={loadMotionFeatures} strict>
@@ -146,11 +145,22 @@ export function mountPortal({ session, role, roleLabel, portal, App }) {
         </LazyMotion>
       </StrictMode>,
     );
+}
+
+/** Page publique d'un portail (ex. inscription) : rendue sans connexion Keycloak. */
+export function mountPublic(App) {
+  createRenderer()(<App />);
+}
+
+/** Démarre un portail : connexion Keycloak, contrôle du rôle, puis rendu de l'application. */
+export function mountPortal({ session, role, roleLabel, portal, App }) {
+  const render = createRenderer();
 
   session
     .init()
     .then(() => {
-      if (session.hasRole(role)) return render(<App />);
+      // `role` : un rôle, ou une liste dont un seul suffit
+      if ([].concat(role).some((r) => session.hasRole(r))) return render(<App />);
       return render(
         <Screen portal={portal} title="Accès réservé">
           <p>

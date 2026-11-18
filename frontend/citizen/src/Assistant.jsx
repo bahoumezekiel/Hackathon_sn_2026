@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, m } from "motion/react";
-import { isDenied, isPending, purposeLabel, timeAgo } from "@fasolink/shared/format";
+import { isAwaitingConsent, isDenied, isPending, purposeLabel, timeAgo } from "@fasolink/shared/format";
 import { api } from "./api";
 
 // Assistant à règles (prototype) : compréhension par mots-clés, réponses lues à voix haute.
@@ -24,8 +24,9 @@ function speak(text) {
 
 /** Phrase simple décrivant un accès. */
 function describe(a) {
-  const purpose = purposeLabel(a.purpose_code).toLowerCase();
+  const purpose = purposeLabel(a.purpose_code, a.purpose_label).toLowerCase();
   if (isDenied(a)) return `${a.administration} a tenté une ${purpose} ${timeAgo(a.created_at)}, mais l'accès a été refusé.`;
+  if (isAwaitingConsent(a)) return `${a.administration} demande votre accord pour une ${purpose} : répondez au SMS reçu, 1 pour oui, 2 pour non.`;
   if (isPending(a)) return `${a.administration} a demandé une ${purpose} ${timeAgo(a.created_at)} ; la réponse est en attente.`;
   const shared = a.shared.map((s) => s.display).join(", ") || "aucune information";
   return `${a.administration}, ${timeAgo(a.created_at)}, pour une ${purpose}. Information transmise : ${shared}.`;
@@ -49,7 +50,7 @@ async function reply(question) {
     const consents = await api.consents();
     if (!consents.length) return { text: "Aucune vérification ne dépend de votre consentement." };
     const list = consents
-      .map((c) => `${c.administration}, ${purposeLabel(c.purpose_code).toLowerCase()} : ${c.status === "GRANTED" ? "accordé" : "non accordé"}.`)
+      .map((c) => `${c.administration}, ${purposeLabel(c.purpose_code, c.purpose_label).toLowerCase()} : ${c.status === "GRANTED" ? "accordé" : "non accordé"}.`)
       .join(" ");
     return { text: `${list} Vous pouvez le modifier dans l'onglet Consentements.` };
   }

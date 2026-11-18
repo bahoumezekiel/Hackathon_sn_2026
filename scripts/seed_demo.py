@@ -51,12 +51,14 @@ with psycopg.connect(config.DATABASE_URL, autocommit=True) as c:
                           .read_text(encoding="utf-8"))
     with c.transaction():
         for cit in citizens:
+            if cit.get("enrole") is False:   # sera enrôlé(e) à son inscription (registre des IUE)
+                continue
             iue = cit.get("iue")
             identity_id = c.execute(
                 """INSERT INTO national_identity_reference
                      (iue_ciphertext, iue_fingerprint, encryption_key_version, identity_status,
                       verification_status, source_system, last_verified_at)
-                   VALUES (%s,%s,%s,%s,%s,'ONI',%s) RETURNING id""",
+                   VALUES (%s,%s,%s,%s,%s,'REGISTRE_IUE',%s) RETURNING id""",
                 (iue_ct := crypto.encrypt(iue) if iue else None,
                  crypto.fingerprint(iue, "IUE") if iue else None,
                  crypto.key_version(iue_ct) if iue else None,
@@ -82,4 +84,4 @@ with psycopg.connect(config.DATABASE_URL, autocommit=True) as c:
                            consent_status, proof_reference)
                        VALUES (%s,%s,%s,'GRANTED','enrolement-demo')""",
                     (identity_id, purpose, admin_id))
-    print(f"{len(citizens)} citoyens fictifs enrôlés")
+    print(f"{sum(c.get('enrole') is not False for c in citizens)} citoyens fictifs enrôlés")

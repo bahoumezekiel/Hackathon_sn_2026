@@ -5,6 +5,7 @@ import { Footer, PageHero, Spinner, TopBar } from "@fasolink/shared/ui";
 import { api, session } from "./api";
 import Alerts, { isOpen } from "./Alerts";
 import Platform from "./Platform";
+import Referentiel from "./Referentiel";
 import Registries from "./Registries";
 import RequestFeed from "./RequestFeed";
 
@@ -43,7 +44,8 @@ function Kpis({ data }) {
   );
 }
 
-export default function App() {
+/** Tableau de bord du superviseur (rôle supervisor). */
+function Dashboard() {
   const ids = useId();
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
@@ -65,7 +67,6 @@ export default function App() {
 
   return (
     <>
-      <TopBar portal="Supervision" session={session} />
       <PageHero
         eyebrow="Supervision et protection des données"
         title="Tableau de bord"
@@ -101,6 +102,50 @@ export default function App() {
           </>
         )}
       </main>
+    </>
+  );
+}
+
+const TABS = [
+  { key: "dashboard", label: "Tableau de bord", role: "supervisor" },
+  { key: "referentiel", label: "Référentiel", role: "platform_admin" },
+];
+
+/** Administration du référentiel (rôle platform_admin) : structures, agents, cas d'usage. */
+function Administration() {
+  const ids = useId();
+  return (
+    <>
+      <PageHero
+        compact
+        eyebrow="Administration de la plateforme"
+        title="Référentiel des structures"
+        titleId={`${ids}-title`}
+        lead="Créez une structure de l'État, ses agents, et les cas d'usage qui fixent les registres qu'elle peut consulter."
+      />
+      <main className="page lift"><Referentiel /></main>
+    </>
+  );
+}
+
+export default function App() {
+  // Deux rôles distincts : qui accorde les accès (platform_admin) n'est pas qui les contrôle (supervisor)
+  const tabs = TABS.filter((t) => session.hasRole(t.role));
+  const [tab, setTab] = useState(tabs[0].key);
+  return (
+    <>
+      <TopBar
+        portal="Supervision"
+        session={session}
+        actions={tabs.length > 1 && (
+          <nav className="tabs" aria-label="Espaces">
+            {tabs.map((t) => (
+              <button key={t.key} type="button" aria-pressed={tab === t.key} onClick={() => setTab(t.key)}>{t.label}</button>
+            ))}
+          </nav>
+        )}
+      />
+      {tab === "dashboard" ? <Dashboard /> : <Administration />}
       <Footer portal="Supervision" />
     </>
   );

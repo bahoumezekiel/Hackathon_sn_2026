@@ -4,6 +4,7 @@ Rôles du realm « fasolink » :
   agent       agent ou système d'une administration ; l'administration est
               donnée par le groupe Keycloak (ADMIN_A, ADMIN_B…)
   supervisor  délégué à la protection des données / exploitation
+  platform_admin  administrateur du référentiel : structures, agents, cas d'usage
   citizen     citoyen ; son identifiant de connexion est son IUE, ou sa
               référence d'état civil s'il n'a pas d'IUE
 """
@@ -55,6 +56,15 @@ def supervisor_auth(creds=Depends(bearer)) -> dict:
     if "supervisor" not in _roles(claims):
         raise HTTPException(403, "Rôle « supervisor » requis")
     return claims
+
+
+def platform_admin_auth(creds=Depends(bearer)) -> dict:
+    """Administrateur de la plateforme : crée structures, agents et cas d'usage.
+    Rôle distinct du superviseur : qui accorde les accès n'est pas qui les contrôle."""
+    claims = _claims(creds)
+    if "platform_admin" not in _roles(claims):
+        raise HTTPException(403, "Rôle « platform_admin » requis")
+    return {"user_id": uuid.UUID(claims["sub"]), "username": claims.get("preferred_username")}
 
 
 def citizen_auth(creds=Depends(bearer)) -> uuid.UUID:

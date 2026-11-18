@@ -14,7 +14,7 @@ function writeSeen(key, iso) {
   try { localStorage.setItem(key, iso); } catch { /* stockage indisponible : le compteur repart à chaque visite */ }
 }
 
-const summary = (a) => `${a.administration} · ${purposeLabel(a.purpose_code)}`;
+const summary = (a) => `${a.administration} · ${purposeLabel(a.purpose_code, a.purpose_label)}`;
 
 /** Alertes de consultation : non lues depuis la dernière visite, et notification pour chaque nouvelle. */
 export function useAccessAlerts(userKey) {
@@ -135,7 +135,7 @@ export function AlertBell({ alerts, accesses, onSelect }) {
                         {a.created_at > since && <span className="new-dot" aria-label="Nouveau" />}
                         <span className="alert-panel-text">
                           <strong>{a.administration}</strong>
-                          <span>{purposeLabel(a.purpose_code)} · {timeAgo(a.created_at)}</span>
+                          <span>{purposeLabel(a.purpose_code, a.purpose_label)} · {timeAgo(a.created_at)}</span>
                         </span>
                         <Badge tone={state.tone}>{state.label}</Badge>
                       </button>

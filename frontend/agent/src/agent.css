@@ -237,3 +237,6 @@
   word-break: break-all;
 }
 
+
+/* Cas d'usage unique de la structure */
+.cas-name { margin: 0; font-weight: 600; }

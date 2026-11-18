@@ -53,7 +53,7 @@ function Alert({ alert: a, onChange }) {
       </header>
       <p className="alert-target">
         {a.contested_administration ?? "Accès non précisé"}
-        {a.contested_purpose && <span> · {purposeLabel(a.contested_purpose)}</span>}
+        {a.contested_purpose && <span> · {purposeLabel(a.contested_purpose, a.contested_purpose_label)}</span>}
       </p>
       <blockquote className="alert-text">{a.description}</blockquote>
       <p className="alert-channel">Reçue par {CHANNEL[a.channel] ?? a.channel}</p>

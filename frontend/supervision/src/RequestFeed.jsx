@@ -41,7 +41,7 @@ export default function RequestFeed({ requests, registries }) {
                     <m.tr key={q.id} {...ROW_ENTER}>
                       <td className="mono cell-time">{formatTime(q.created_at)}</td>
                       <td className="cell-admin">{q.administration}</td>
-                      <td className="cell-purpose">{purposeLabel(q.purpose_code)}</td>
+                      <td className="cell-purpose">{purposeLabel(q.purpose_code, q.purpose_label)}</td>
                       <td className="cell-registry">{registryName[q.registry] ?? q.registry}</td>
                       <td className="cell-state">
                         <Badge tone={state.tone}>{state.label}</Badge>

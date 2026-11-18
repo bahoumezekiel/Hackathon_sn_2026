@@ -417,3 +417,6 @@ a { color: var(--green-700); text-underline-offset: 0.2em; }
   .fl-divider { margin-inline: 1rem; }
   .fl-tagline { font-size: 1rem; }
 }
+
+/* Lien d'inscription du portail citoyen */
+.fl-signup { margin-top: 0.75rem; text-decoration: none; }

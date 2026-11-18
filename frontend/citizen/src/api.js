@@ -13,3 +13,19 @@ export const api = {
   report: (requestId, description, channel) =>
     request("/citizen/alerts", { method: "POST", body: { request_id: requestId, description, channel } }),
 };
+
+/** Inscription (pages publiques, sans jeton) : vérification de l'IUE auprès de l'ONI puis code SMS. */
+export const signup = {
+  start: (iue, dateNaissance) =>
+    request("/public/inscription/code", { method: "POST", body: { iue, date_naissance: dateNaissance }, auth: false }),
+  confirm: (token, code, password) =>
+    request("/public/inscription/confirmation", { method: "POST", body: { token, code, password }, auth: false }),
+  demo: () => request("/demo/config", { auth: false }).catch(() => null),
+};
+
+/** Démonstration : téléphone simulé d'un usager (SMS reçus, réponses 1/2). */
+export const phone = {
+  inbox: (number) => request(`/demo/telephone/${encodeURIComponent(number)}`, { auth: false }),
+  reply: (number, text) =>
+    request(`/demo/telephone/${encodeURIComponent(number)}`, { method: "POST", body: { text }, auth: false }),
+};

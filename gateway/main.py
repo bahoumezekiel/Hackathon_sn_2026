@@ -4,17 +4,20 @@ import logging
 import threading
 import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from urllib.parse import parse_qsl
+from datetime import date, datetime, timezone
 from typing import Literal
 
 import httpx
 import jwt
-from fastapi import Depends, FastAPI, HTTPException
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel, Field
 
-from . import audit, config, crypto, db, policy, registry_client, resilience, service
-from .auth import agent_auth, citizen_auth, keycloak_ready, supervisor_auth
+from . import (audit, config, consentement_sms, crypto, db, inscription, keycloak_admin, policy,
+               referentiel, registry_client, resilience, service, sms, twilio_sms)
+from .auth import agent_auth, citizen_auth, keycloak_ready, platform_admin_auth, supervisor_auth
 from .predicates import PREDICATES, display
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s : %(message)s")
@@ -34,6 +37,8 @@ def _worker(stop: threading.Event) -> None:
                 registry_client.health_check(reg)
             if (n := service.process_due_queue()):
                 log.info("%s demande(s) relancée(s)", n)
+            if (n := consentement_sms.expire_due()):
+                log.info("%s demande(s) refusée(s) : accord SMS non reçu", n)
         except Exception:
             log.exception("Erreur dans la tâche de fond")
         stop.wait(config.WORKER_INTERVAL_S)
@@ -54,7 +59,7 @@ app = FastAPI(
     description=(
         "Socle d'interopérabilité administrative — « Dites-le nous une fois ».\n\n"
         "**Authentification** : jeton d'accès Keycloak (realm `fasolink`). Pour un système "
-        "d'information : flux *client credentials* avec le client `admin-a`, `admin-b`, `admin-c` ou `admin-d`. "
+        "d'information : flux *client credentials* avec le client `admin-a`, `admin-b`, `admin-c` ou `cefore`. "
         "Cliquez sur **Authorize** et collez le jeton."),
     swagger_ui_parameters={"persistAuthorization": True},
 )
@@ -72,8 +77,41 @@ async def _not_found(_req, exc):
 
 
 @app.exception_handler(service.BadRequest)
+@app.exception_handler(referentiel.Invalid)
+@app.exception_handler(inscription.Invalid)
 async def _bad_request(_req, exc):
     return JSONResponse(status_code=400, content={"detail": str(exc)})
+
+
+@app.exception_handler(referentiel.Missing)
+async def _missing(_req, exc):
+    return JSONResponse(status_code=404, content={"detail": str(exc)})
+
+
+@app.exception_handler(inscription.Conflict)
+async def _signup_conflict(_req, exc):
+    return JSONResponse(status_code=409, content={"detail": str(exc)})
+
+
+@app.exception_handler(inscription.TooMany)
+async def _signup_too_many(_req, exc):
+    return JSONResponse(status_code=429, content={"detail": str(exc)})
+
+
+@app.exception_handler(inscription.Unavailable)
+async def _signup_unavailable(_req, exc):
+    return JSONResponse(status_code=503, content={"detail": str(exc)})
+
+
+@app.exception_handler(keycloak_admin.Conflict)
+async def _kc_conflict(_req, exc):
+    return JSONResponse(status_code=409, content={"detail": "Cet identifiant est déjà utilisé dans Keycloak"})
+
+
+@app.exception_handler(keycloak_admin.KeycloakAdminError)
+async def _kc_error(_req, exc):
+    log.error("Keycloak (administration) : %s", exc)
+    return JSONResponse(status_code=502, content={"detail": f"Gestion des comptes indisponible : {exc}"})
 
 
 # ---------------------------------------------------------------- modèles
@@ -114,6 +152,73 @@ class OutageIn(BaseModel):
 class AlertUpdateIn(BaseModel):
     status: Literal["OPEN", "IN_REVIEW", "RESOLVED", "REJECTED"]
     note: str | None = Field(default=None, max_length=1000)
+
+
+class SignupStartIn(BaseModel):
+    iue: str = Field(min_length=4, max_length=20)
+    date_naissance: date
+
+
+class SignupConfirmIn(BaseModel):
+    token: str = Field(min_length=10, max_length=64)
+    code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
+    password: str = Field(min_length=10, max_length=128)
+
+
+class SmsIn(BaseModel):
+    """Format des SMS entrants (à adapter à l'agrégateur de l'opérateur)."""
+    sender: str = Field(alias="from", min_length=8, max_length=20)
+    text: str = Field(min_length=1, max_length=160)
+
+
+class PhoneReplyIn(BaseModel):
+    text: str = Field(min_length=1, max_length=160)
+
+
+class AdministrationIn(BaseModel):
+    code: str = Field(min_length=2, max_length=30)
+    name: str = Field(min_length=3, max_length=150)
+    ministry: str | None = Field(default=None, max_length=150)
+
+
+class AdministrationStatusIn(BaseModel):
+    status: Literal["ACTIVE", "SUSPENDED"]
+
+
+class AgentIn(BaseModel):
+    username: str = Field(min_length=3, max_length=60, pattern=r"^[a-z0-9][a-z0-9._-]+$")
+    first_name: str = Field(min_length=1, max_length=80)
+    last_name: str = Field(min_length=1, max_length=80)
+    email: str | None = Field(default=None, max_length=150, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+class AgentStatusIn(BaseModel):
+    enabled: bool
+
+
+class CasierParamsIn(BaseModel):
+    categories_incompatibles: list[str] = Field(default_factory=list, max_length=20)
+    ignorer_sursis: bool = False
+
+
+class RegistreIn(BaseModel):
+    registry_code: str = Field(max_length=30)
+    predicates: list[str] = Field(min_length=1, max_length=10)
+    requires_consent: bool = False
+    degraded_cache_ttl_s: int = Field(default=0, ge=0, le=86_400)
+    parametres: CasierParamsIn | None = None
+
+
+class CasUsageUpdateIn(BaseModel):
+    label: str = Field(min_length=3, max_length=150)
+    description: str | None = Field(default=None, max_length=1000)
+    legal_basis: str = Field(min_length=5, max_length=150)
+    requires_justification: bool = True
+    registres: list[RegistreIn] = Field(min_length=1, max_length=10)
+
+
+class CasUsageIn(CasUsageUpdateIn):
+    code: str = Field(min_length=3, max_length=50)
 
 
 # ---------------------------------------------------------------- public
@@ -169,19 +274,78 @@ def verify_attestation(body: AttestationIn):
             "display": display(claims["predicate"], claims["value"])}
 
 
+# ---------------------------------------------------------------- inscription des citoyens
+
+@app.post("/public/inscription/code", tags=["inscription"])
+def signup_start(body: SignupStartIn):
+    """Vérifie l'IUE auprès du registre national de l'identifiant unique et envoie un code au
+    téléphone enregistré. En démonstration, le code est renvoyé (`demo_code`)."""
+    return inscription.start(body.iue, body.date_naissance.isoformat())
+
+
+@app.post("/public/inscription/confirmation", tags=["inscription"], status_code=201)
+def signup_confirm(body: SignupConfirmIn):
+    """Vérifie le code et crée le compte citoyen (identifiant de connexion : l'IUE)."""
+    return inscription.confirm(body.token, body.code, body.password)
+
+
+# ---------------------------------------------------------------- SMS (usagers sans accès au web)
+
+@app.post("/sms/entrant", tags=["sms"])
+def sms_inbound(body: SmsIn, x_sms_token: str | None = Header(None)):
+    """Réponse d'un usager à une demande d'accord (« 1 » = OUI, « 2 » = NON), relayée par
+    l'opérateur SMS. Fermée tant que FASOLINK_SMS_WEBHOOK_TOKEN n'est pas configuré."""
+    if not config.SMS_WEBHOOK_TOKEN or x_sms_token != config.SMS_WEBHOOK_TOKEN:
+        raise HTTPException(403, "Opérateur SMS non authentifié")
+    return {"reply": consentement_sms.handle_reply(body.sender, body.text)}
+
+
+@app.post("/sms/twilio", tags=["sms"])
+async def sms_twilio(request: Request):
+    """Webhook Twilio des SMS entrants (« A message comes in », HTTP POST).
+    La signature X-Twilio-Signature est vérifiée avec l'URL publique TWILIO_WEBHOOK_URL."""
+    params = dict(parse_qsl((await request.body()).decode(), keep_blank_values=True))
+    if config.SMS_PROVIDER != "twilio" or \
+            not sms.twilio_request_valid(params, request.headers.get("X-Twilio-Signature", "")):
+        raise HTTPException(403, "Signature Twilio invalide")
+    await run_in_threadpool(consentement_sms.handle_reply, params.get("From", ""), params.get("Body", ""))
+    # La confirmation part par l'API (sms.send) : réponse TwiML vide
+    return Response('<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
+                    media_type="application/xml")
+
+
+@app.post("/voix/twilio", tags=["sms"])
+async def voice_twilio(request: Request, consent: uuid.UUID, background: BackgroundTasks):
+    """Touche pressée par l'usager pendant l'appel de consentement (Twilio <Gather>).
+    Répond en TwiML ; le registre n'est consulté qu'après la réponse, en tâche de fond."""
+    params = dict(parse_qsl((await request.body()).decode(), keep_blank_values=True))
+    url = consentement_sms.voice_action_url(consent)
+    if not config.VOICE_CONSENT or not twilio_sms.signature_valid(
+            config.TWILIO_AUTH_TOKEN, url, params, request.headers.get("X-Twilio-Signature", "")):
+        raise HTTPException(403, "Signature Twilio invalide")
+    twiml, granted = await run_in_threadpool(consentement_sms.handle_voice, consent,
+                                             params.get("Digits", ""))
+    if granted:
+        background.add_task(consentement_sms.run_granted, granted)
+    return Response(twiml, media_type="application/xml")
+
+
 # ---------------------------------------------------------------- espace administration
 
 @app.get("/v1/purposes", tags=["administration"])
 def purposes(auth=Depends(agent_auth)):
-    """Finalités que cette administration est autorisée à invoquer."""
+    """Cas d'usage de cette administration et registres consultables pour chacun.
+
+    Le `purpose_code` d'une vérification est le code du cas d'usage ; l'agent choisit,
+    selon l'usager, les registres à interroger parmi ceux du cas d'usage."""
     with db.tx() as c:
-        rows = c.execute(
-            """SELECT p.policy_code, p.purpose_code, p.legal_basis, p.allowed_predicates,
-                      p.requires_consent, r.code AS registry_code, r.name AS registry_name
-               FROM data_access_policy p JOIN administrative_registry r ON r.id = p.registry_id
-               WHERE p.requesting_admin_id=%s AND p.is_active ORDER BY p.policy_code""",
-            (auth["admin"]["id"],)).fetchall()
-    return {"administration": auth["admin"]["name"], "purposes": rows,
+        cas = referentiel.list_cas_usage(c, auth["admin"]["id"], active_only=True)
+    flat = [dict(r, purpose_code=cu["code"], purpose_label=cu["label"], legal_basis=cu["legal_basis"])
+            for cu in cas for r in cu["registres"]]
+    return {"administration": auth["admin"]["name"],
+            "cas_usage": [{k: cu[k] for k in ("code", "label", "description", "legal_basis",
+                                              "requires_justification", "registres")} for cu in cas],
+            "purposes": flat,
             "predicates": {k: v["label"] for k, v in PREDICATES.items()}}
 
 
@@ -209,6 +373,8 @@ def citizen_history(identity_id=Depends(citizen_auth)):
                              "WHERE id=%s", (identity_id,)).fetchone()
         rows = c.execute(
             """SELECT q.id, q.created_at, q.completed_at, q.purpose_code, q.status, q.decision,
+                      purpose_label(q.requester_admin_id, q.purpose_code) AS purpose_label,
+                      (SELECT s.status FROM sms_consent_request s WHERE s.request_id = q.id) AS consent_sms,
                       q.decision_reason, q.service_mode, q.justification,
                       a.name AS administration, r.name AS registry, r.code AS registry_code,
                       (SELECT coalesce(jsonb_agg(jsonb_build_object(
@@ -269,6 +435,7 @@ def citizen_consents(identity_id=Depends(citizen_auth)):
     with db.tx() as c:
         return c.execute(
             """SELECT p.policy_code, p.purpose_code, a.name AS administration, r.name AS registry,
+                      purpose_label(p.requesting_admin_id, p.purpose_code) AS purpose_label,
                       (SELECT cc.consent_status FROM citizen_consent cc
                         WHERE cc.identity_id=%s AND cc.requesting_admin_id=p.requesting_admin_id
                           AND cc.purpose_code=p.purpose_code
@@ -356,7 +523,8 @@ def supervision_requests():
     with db.tx() as c:
         return c.execute(
             """SELECT q.id, q.created_at, a.name AS administration, r.code AS registry,
-                      q.purpose_code, q.status, q.decision, q.service_mode, q.retry_count
+                      q.purpose_code, q.status, q.decision, q.service_mode, q.retry_count,
+                      purpose_label(q.requester_admin_id, q.purpose_code) AS purpose_label
                FROM access_request q
                JOIN administration a ON a.id = q.requester_admin_id
                JOIN administrative_registry r ON r.id = q.registry_id
@@ -369,7 +537,8 @@ def supervision_alerts():
         return c.execute(
             """SELECT ca.id, ca.created_at, ca.channel, ca.language, ca.description, ca.status,
                       ca.resolution_note, a.name AS contested_administration,
-                      e.purpose_code AS contested_purpose, e.event_timestamp AS contested_at
+                      e.purpose_code AS contested_purpose, e.event_timestamp AS contested_at,
+                      purpose_label(e.actor_admin_id, e.purpose_code) AS contested_purpose_label
                FROM citizen_alert ca
                LEFT JOIN audit_event e ON e.id = ca.audit_event_id
                LEFT JOIN administration a ON a.id = e.actor_admin_id
@@ -396,7 +565,116 @@ def supervision_integrity():
     return _integrity()
 
 
+# ---------------------------------------------------------------- référentiel (administrateur)
+
+@app.get("/admin/catalogue", tags=["référentiel"])
+def admin_catalogue(_actor=Depends(platform_admin_auth)):
+    """Registres connectés, informations (prédicats) qu'ils fournissent, catégories du casier."""
+    with db.tx() as c:
+        return referentiel.catalogue(c)
+
+
+@app.get("/admin/administrations", tags=["référentiel"])
+def admin_list_administrations(_actor=Depends(platform_admin_auth)):
+    with db.tx() as c:
+        return referentiel.list_administrations(c)
+
+
+@app.post("/admin/administrations", tags=["référentiel"], status_code=201)
+def admin_create_administration(body: AdministrationIn, actor=Depends(platform_admin_auth)):
+    """Crée une structure de l'État et son groupe Keycloak (rattachement des agents)."""
+    with db.tx() as c:
+        return referentiel.create_administration(c, code=body.code, name=body.name,
+                                                 ministry=body.ministry, actor=actor)
+
+
+@app.post("/admin/administrations/{code}/status", tags=["référentiel"])
+def admin_set_status(code: str, body: AdministrationStatusIn, actor=Depends(platform_admin_auth)):
+    """Suspendre une structure : OPA refuse alors toutes ses demandes."""
+    with db.tx() as c:
+        return referentiel.set_administration_status(c, code, body.status, actor)
+
+
+@app.get("/admin/administrations/{code}/agents", tags=["référentiel"])
+def admin_list_agents(code: str, _actor=Depends(platform_admin_auth)):
+    with db.tx() as c:
+        admin = referentiel.get_administration(c, code)
+    return keycloak_admin.list_agents(admin["code"])
+
+
+@app.post("/admin/administrations/{code}/agents", tags=["référentiel"], status_code=201)
+def admin_create_agent(code: str, body: AgentIn, actor=Depends(platform_admin_auth)):
+    """Crée un agent ; le mot de passe provisoire n'est affiché qu'une fois."""
+    with db.tx() as c:
+        admin = referentiel.get_administration(c, code)
+        if admin["status"] != "ACTIVE":
+            raise HTTPException(400, "Structure suspendue : réactivez-la avant de lui créer des agents")
+        created = keycloak_admin.create_agent(
+            admin["code"], admin["name"], username=body.username, first_name=body.first_name,
+            last_name=body.last_name, email=body.email)
+        referentiel.log_agent_event(c, admin["code"], "AGENT_CREATED", body.username, actor)
+    return created
+
+
+@app.post("/admin/administrations/{code}/agents/{user_id}", tags=["référentiel"])
+def admin_set_agent(code: str, user_id: uuid.UUID, body: AgentStatusIn,
+                    actor=Depends(platform_admin_auth)):
+    with db.tx() as c:
+        admin = referentiel.get_administration(c, code)
+        keycloak_admin.set_agent_enabled(admin["code"], str(user_id), body.enabled)
+        referentiel.log_agent_event(c, admin["code"],
+                                    "AGENT_ENABLED" if body.enabled else "AGENT_DISABLED",
+                                    str(user_id), actor)
+    return {"id": str(user_id), "enabled": body.enabled}
+
+
+@app.get("/admin/administrations/{code}/cas-usage", tags=["référentiel"])
+def admin_list_cas_usage(code: str, _actor=Depends(platform_admin_auth)):
+    with db.tx() as c:
+        admin = referentiel.get_administration(c, code)
+        return referentiel.list_cas_usage(c, admin["id"])
+
+
+@app.post("/admin/administrations/{code}/cas-usage", tags=["référentiel"], status_code=201)
+def admin_create_cas_usage(code: str, body: CasUsageIn, actor=Depends(platform_admin_auth)):
+    """Crée un cas d'usage et une politique d'accès par registre consultable."""
+    with db.tx() as c:
+        return referentiel.create_cas_usage(c, code, body.model_dump(), actor)
+
+
+@app.put("/admin/cas-usage/{cas_id}", tags=["référentiel"])
+def admin_update_cas_usage(cas_id: uuid.UUID, body: CasUsageUpdateIn,
+                           actor=Depends(platform_admin_auth)):
+    """Nouvelle version : les politiques en cours sont closes, jamais modifiées."""
+    with db.tx() as c:
+        return referentiel.update_cas_usage(c, cas_id, body.model_dump(), actor)
+
+
+@app.post("/admin/cas-usage/{cas_id}/deactivate", tags=["référentiel"])
+def admin_deactivate_cas_usage(cas_id: uuid.UUID, actor=Depends(platform_admin_auth)):
+    with db.tx() as c:
+        return referentiel.deactivate_cas_usage(c, cas_id, actor)
+
+
 # ---------------------------------------------------------------- démonstration
+
+def _demo_only():
+    if not config.DEMO_MODE:
+        raise HTTPException(404)
+
+
+@app.get("/demo/telephone/{phone}", tags=["démonstration"], dependencies=[Depends(_demo_only)])
+def demo_phone_inbox(phone: str):
+    """DÉMONSTRATION : SMS reçus et envoyés par le téléphone simulé d'un usager."""
+    return sms.inbox(phone)
+
+
+@app.post("/demo/telephone/{phone}", tags=["démonstration"], dependencies=[Depends(_demo_only)])
+def demo_phone_reply(phone: str, body: PhoneReplyIn):
+    """DÉMONSTRATION : l'usager répond depuis son téléphone simulé (même traitement que
+    POST /sms/entrant)."""
+    return {"reply": consentement_sms.handle_reply(phone, body.text)}
+
 
 @app.get("/demo/config", tags=["démonstration"])
 def demo_config():
@@ -404,21 +682,30 @@ def demo_config():
     if not config.DEMO_MODE:
         raise HTTPException(404)
     with db.tx() as c:
-        admins = c.execute("SELECT code, name FROM administration "
-                           "WHERE code LIKE 'ADMIN_%%' ORDER BY code").fetchall()
+        admins = c.execute("""SELECT a.code, a.name FROM administration a
+                              WHERE EXISTS (SELECT 1 FROM cas_usage cu
+                                             WHERE cu.admin_id = a.id AND cu.created_by = 'seed')
+                              ORDER BY a.created_at, a.code""").fetchall()
     data = json.loads((config.ROOT / "registries-mock" / "data" / "citoyens_fictifs.json")
                       .read_text(encoding="utf-8"))
     citizens = [{
         "label": f"{c['prenoms']} {c['nom']}", "note": c.get("note", ""), "iue": c.get("iue"),
         "local_reference": c["etat_civil"]["ref"] if not c.get("iue") else None,
         "username": (c.get("iue") or c["etat_civil"]["ref"]).lower(),
+        "has_account": c.get("compte") is not False,
+        "telephone": config.SMS_DEMO_PHONES.get(c.get("iue") or "")
+                     or (c.get("identifiant_unique") or {}).get("telephone"),   # téléphone simulé
+        "sans_web": bool(c.get("sans_web")),   # usager joignable seulement par SMS
+        # Démo : date de naissance des seuls citoyens à inscrire, pour remplir le formulaire en un clic
+        "birth_date": c["etat_civil"]["date_naissance"] if c.get("compte") is False else None,
     } for c in data]
     return {
         "keycloak": {"url": config.KEYCLOAK_PUBLIC_URL, "realm": config.KEYCLOAK_REALM,
                      "client_id": config.KEYCLOAK_CLI_CLIENT},
         "demo_password": "demo",
         "agents": [{"code": a["code"], "name": a["name"],
-                    "username": f"agent-{a['code'][-1].lower()}"} for a in admins],
+                    "username": config.agent_username(a["code"])} for a in admins],
         "supervisor": "superviseur",
+        "platform_admin": "admin-fasolink",
         "citizens": citizens,
     }

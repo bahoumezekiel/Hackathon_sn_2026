@@ -1,7 +1,7 @@
 import { useEffect, useId, useState } from "react";
 import { AnimatePresence, m } from "motion/react";
 import {
-  formatDateTime, isDenied, isPending, purposeLabel, requestState, timeAgo,
+  formatDateTime, isAwaitingConsent, isDenied, isPending, purposeLabel, requestState, timeAgo,
 } from "@fasolink/shared/format";
 import { Badge, Spinner } from "@fasolink/shared/ui";
 import { api } from "./api";
@@ -86,7 +86,7 @@ function Access({ access: a, focused, onChange }) {
         <header className="access-head">
           <div>
             <h2>{a.administration}</h2>
-            <p className="access-purpose">{purposeLabel(a.purpose_code)} · {a.registry}</p>
+            <p className="access-purpose">{purposeLabel(a.purpose_code, a.purpose_label)} · {a.registry}</p>
           </div>
           <Badge tone={state.tone}>{state.label}</Badge>
         </header>
@@ -95,6 +95,14 @@ function Access({ access: a, focused, onChange }) {
           <p className="access-outcome is-denied">
             <strong>Accès refusé.</strong> {a.decision_reason}
           </p>
+        )}
+        {isAwaitingConsent(a) && (
+          <p className="access-outcome is-pending">
+            Votre accord vous a été demandé par SMS. Répondez 1 pour accepter, 2 pour refuser.
+          </p>
+        )}
+        {a.consent_sms === "GRANTED" && (
+          <p className="access-outcome">Vous avez donné votre accord par SMS, pour cette consultation uniquement.</p>
         )}
         {isPending(a) && (
           <p className="access-outcome is-pending">

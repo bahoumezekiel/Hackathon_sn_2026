@@ -69,13 +69,13 @@ def value(result, predicate):
     return next((a["value"] for a in result["attestations"] if a["predicate"] == predicate), None)
 
 
-AWA = {"iue": "BF1998000123"}
-ISSOUF = {"iue": "BF2010000456"}
-MARIAM = {"iue": "BF1985000789"}
-SALIF = {"iue": "BF1979001012"}
+AWA = {"iue": "482019736154"}
+ISSOUF = {"iue": "730562184907"}
+MARIAM = {"iue": "615307429863"}
+SALIF = {"iue": "259846103578"}
 AMINATA = {"registry": "ETAT_CIVIL", "local_reference": "EC-FDG-2001-000222"}
-FATIMATA = {"iue": "BF1990001415"}
-ADAMA = {"iue": "BF2008001617"}
+FATIMATA = {"iue": "904173658216"}
+ADAMA = {"iue": "357690412845"}
 
 # S'assurer que les registres sont en marche au départ
 for code in ("ETAT_CIVIL", "NATIONALITE", "CASIER"):
@@ -107,7 +107,13 @@ check("A ne peut pas interroger la nationalité (finalité non autorisée)",
       decisions == {"ETAT_CIVIL": "PERMIT", "NATIONALITE": "DENY"}, decisions)
 
 res = first(verify("ADMIN_C", ISSOUF, "VERIF_CASIER_EMPLOI", ["casier_compatible_finalite"]))
-check("Casier sans consentement : refusé", res["decision"] == "DENY", res["decision_reason"])
+check("Casier sans consentement : accord demandé par SMS au numéro de l'IUE",
+      res["status"] == "AWAITING_CONSENT" and res["consent_sms"], res["decision_reason"])
+issouf_phone = next(c["telephone"] for c in cfg["citizens"] if c["iue"] == ISSOUF["iue"])
+http.post(f"/demo/telephone/{''.join(ch for ch in issouf_phone if ch.isdigit())}",
+          json={"text": "2"}).raise_for_status()
+res = http.get(f"/v1/requests/{res['request_id']}", headers=AGENT["ADMIN_C"]).json()
+check("L'usager répond 2 (NON) par SMS : refusé", res["decision"] == "DENY", res["decision_reason"])
 res = first(verify("ADMIN_C", MARIAM, "VERIF_CASIER_EMPLOI", ["casier_compatible_finalite"]))
 check("Casier de Mariam : incompatible (Non), sans détail de la condamnation",
       value(res, "casier_compatible_finalite") is False and "FRAUDE" not in json.dumps(res))
@@ -125,11 +131,11 @@ check("Échange machine à machine (Keycloak client credentials)",
       value(res, "nationalite_burkinabe") is True)
 check("Sans jeton : accès refusé", http.post("/v1/verifications", json={}).status_code == 401)
 check("Citoyen ne peut pas interroger un registre",
-      http.get("/v1/purposes", headers=user_token("bf1998000123")).status_code == 403)
+      http.get("/v1/purposes", headers=user_token("482019736154")).status_code == 403)
 
 # ---------------------------------------------------------------------------
 title("Épreuve 2 — Montrer à l'usager qui a consulté ses données")
-auth = user_token("bf1998000123")  # Awa se connecte avec son IUE
+auth = user_token("482019736154")  # Awa se connecte avec son IUE
 hist = http.get("/citizen/history", headers=auth).raise_for_status().json()
 admins = {a["administration"] for a in hist["accesses"]}
 check("Awa voit les consultations de l'Administration A", "Administration A" in admins, admins)

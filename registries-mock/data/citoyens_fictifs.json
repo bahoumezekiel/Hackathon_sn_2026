@@ -1,6 +1,7 @@
 [
   {
-    "nom": "Ouédraogo", "prenoms": "Awa", "iue": "BF1998000123",
+    "nom": "Ouédraogo", "prenoms": "Awa", "iue": "482019736154",
+    "identifiant_unique": {"telephone": "+226 70 12 34 56", "statut": "ACTIF"},
     "identity_status": "VERIFIED",
     "note": "Majeure, burkinabè, casier vierge",
     "consents": ["POL_C_CASIER"],
@@ -11,7 +12,8 @@
     "casier": {"ref": "CJ-0000781", "condamnations": []}
   },
   {
-    "nom": "Sawadogo", "prenoms": "Issouf", "iue": "BF2010000456",
+    "nom": "Sawadogo", "prenoms": "Issouf", "iue": "730562184907",
+    "identifiant_unique": {"telephone": "+226 76 45 12 08", "statut": "ACTIF"},
     "identity_status": "VERIFIED",
     "note": "Mineur (16 ans), aucun consentement casier",
     "consents": [],
@@ -22,7 +24,8 @@
     "casier": {"ref": "CJ-0000782", "condamnations": []}
   },
   {
-    "nom": "Traoré", "prenoms": "Mariam", "iue": "BF1985000789",
+    "nom": "Traoré", "prenoms": "Mariam", "iue": "615307429863",
+    "identifiant_unique": {"telephone": "+226 71 88 20 45", "statut": "ACTIF"},
     "identity_status": "VERIFIED",
     "note": "Condamnation incompatible avec l'emploi",
     "consents": ["POL_C_CASIER"],
@@ -35,7 +38,8 @@
        "peine": "12 mois avec sursis"}]}
   },
   {
-    "nom": "Zongo", "prenoms": "Salif", "iue": "BF1979001012",
+    "nom": "Zongo", "prenoms": "Salif", "iue": "259846103578",
+    "identifiant_unique": {"telephone": "+226 78 03 66 19", "statut": "ACTIF"},
     "identity_status": "VERIFIED",
     "note": "Résident de nationalité étrangère",
     "consents": ["POL_C_CASIER"],
@@ -69,7 +73,8 @@
     "casier": null
   },
   {
-    "nom": "Sanou", "prenoms": "Fatimata", "iue": "BF1990001415",
+    "nom": "Sanou", "prenoms": "Fatimata", "iue": "904173658216",
+    "identifiant_unique": {"telephone": "+226 72 54 31 77", "statut": "ACTIF"},
     "identity_status": "VERIFIED",
     "note": "Majeure, burkinabè, casier vierge",
     "consents": ["POL_C_CASIER"],
@@ -80,7 +85,8 @@
     "casier": {"ref": "CJ-0000785", "condamnations": []}
   },
   {
-    "nom": "Ouattara", "prenoms": "Adama", "iue": "BF2008001617",
+    "nom": "Ouattara", "prenoms": "Adama", "iue": "357690412845",
+    "identifiant_unique": {"telephone": "+226 65 21 09 43", "statut": "ACTIF"},
     "identity_status": "VERIFIED",
     "note": "Aura 18 ans le 20 novembre 2026",
     "consents": [],
@@ -89,5 +95,57 @@
     "nationalite": {"ref": "CNB-2024-001882", "nationalite": "BF", "statut": "VALIDE",
                     "date_delivrance": "2024-02-14", "juridiction": "TGI Dédougou"},
     "casier": {"ref": "CJ-0000786", "condamnations": []}
+  },
+  {
+    "nom": "Compaoré", "prenoms": "Ousmane", "iue": "128475906331",
+    "identifiant_unique": {"telephone": "+226 70 98 76 54", "statut": "ACTIF"},
+    "compte": false,
+    "identity_status": "VERIFIED",
+    "note": "IUE actif, pas encore inscrit : peut créer son compte citoyen",
+    "consents": [],
+    "etat_civil": {"ref": "EC-OUA-1995-002021", "nom": "Compaoré", "prenoms": "Ousmane",
+                   "date_naissance": "1995-06-24", "lieu_naissance": "Ouagadougou", "sexe": "M"},
+    "nationalite": {"ref": "CNB-2014-006120", "nationalite": "BF", "statut": "VALIDE",
+                    "date_delivrance": "2014-10-03", "juridiction": "TGI Ouagadougou"},
+    "casier": {"ref": "CJ-0000790", "condamnations": []}
+  },
+  {
+    "nom": "Yaméogo", "prenoms": "Pauline", "iue": "846251037790",
+    "identifiant_unique": {"telephone": "+226 75 31 42 86", "statut": "ACTIF"},
+    "compte": false, "enrole": false,
+    "identity_status": "VERIFIED",
+    "note": "IUE actif, inconnue de FasoLink : enrôlée lors de son inscription",
+    "consents": [],
+    "etat_civil": {"ref": "EC-KDG-2001-002324", "nom": "Yaméogo", "prenoms": "Pauline",
+                   "date_naissance": "2001-09-08", "lieu_naissance": "Koudougou", "sexe": "F"},
+    "nationalite": {"ref": "CNB-2020-004471", "nationalite": "BF", "statut": "VALIDE",
+                    "date_delivrance": "2020-01-22", "juridiction": "TGI Koudougou"},
+    "casier": {"ref": "CJ-0000791", "condamnations": []}
+  },
+  {
+    "nom": "Nikiéma", "prenoms": "Jean-Baptiste", "iue": "571938264402",
+    "identifiant_unique": {"telephone": "+226 70 00 11 22", "statut": "ANNULE"},
+    "compte": false,
+    "identity_status": "VERIFIED",
+    "note": "IUE annulé (doublon) : l'inscription est refusée",
+    "consents": [],
+    "etat_civil": {"ref": "EC-ZNR-1988-002627", "nom": "Nikiéma", "prenoms": "Jean-Baptiste",
+                   "date_naissance": "1988-04-02", "lieu_naissance": "Ziniaré", "sexe": "M"},
+    "nationalite": {"ref": "CNB-2009-001905", "nationalite": "BF", "statut": "VALIDE",
+                    "date_delivrance": "2009-12-11", "juridiction": "TGI Ziniaré"},
+    "casier": null
+  },
+  {
+    "nom": "Sawadogo", "prenoms": "Boureima", "iue": "693027415586",
+    "identifiant_unique": {"telephone": "+226 76 58 03 21", "statut": "ACTIF"},
+    "compte": false, "sans_web": true,
+    "identity_status": "VERIFIED",
+    "note": "Cultivateur à Kaya, téléphone simple sans Internet : donne son accord par SMS",
+    "consents": [],
+    "etat_civil": {"ref": "EC-KYA-1972-003118", "nom": "Sawadogo", "prenoms": "Boureima",
+                   "date_naissance": "1972-08-15", "lieu_naissance": "Kaya", "sexe": "M"},
+    "nationalite": {"ref": "CNB-1996-000874", "nationalite": "BF", "statut": "VALIDE",
+                    "date_delivrance": "1996-05-20", "juridiction": "TGI Kaya"},
+    "casier": {"ref": "CJ-0000792", "condamnations": []}
   }
 ]

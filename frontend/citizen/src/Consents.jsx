@@ -43,7 +43,7 @@ export default function Consents({ onChange }) {
           <div key={c.policy_code} className="card consent">
             <div>
               <p className="consent-title" id={labelId}>{c.administration}</p>
-              <p className="consent-purpose">{purposeLabel(c.purpose_code)} · {c.registry}</p>
+              <p className="consent-purpose">{purposeLabel(c.purpose_code, c.purpose_label)} · {c.registry}</p>
               <p className={`consent-state${granted ? " is-on" : ""}`}>
                 {granted ? "Vous avez donné votre accord." : "Sans votre accord, l'accès sera refusé."}
               </p>

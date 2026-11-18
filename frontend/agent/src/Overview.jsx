@@ -1,5 +1,5 @@
 import { m } from "motion/react";
-import { isDenied, isPending } from "@fasolink/shared/format";
+import { isDenied, isOpenRequest } from "@fasolink/shared/format";
 import { useCountUp } from "@fasolink/shared/hooks";
 import { Icon } from "@fasolink/shared/ui";
 
@@ -11,8 +11,8 @@ const STEPS = [
   },
   {
     icon: "list-checks",
-    title: "Cocher les pièces",
-    text: "Celles qu'exige le dossier et que votre administration est habilitée à vérifier. Le motif est obligatoire.",
+    title: "Cocher les registres",
+    text: "Parmi ceux de votre cas d'usage, seulement ceux qu'exige le dossier de cet usager. Le motif est tracé.",
   },
   {
     icon: "shield-check",
@@ -43,8 +43,8 @@ export function Procedure() {
       <m.p className="guide-note" {...enter(3)}>
         <Icon name="eye-off" />
         <span>
-          <strong>Ce que vous ne recevez jamais :</strong> date de naissance, nationalité détaillée, condamnations.
-          FasoLink lit le registre et ne vous transmet que la réponse ; l'usager voit chaque consultation en temps réel.
+          <strong>Vous ne voyez jamais les données elles-mêmes</strong> (date de naissance, nationalité,
+          condamnations) : seulement la réponse à votre question. L'usager est informé de chaque consultation.
         </span>
       </m.p>
     </div>
@@ -69,7 +69,7 @@ const seconds = (ms) => `${(ms / 1000).toLocaleString("fr-FR", { maximumFraction
 /** Indicateurs de la session : ce que le guichet a évité à l'usager. */
 export function SessionStats({ dossiers }) {
   const items = dossiers.flatMap((d) => d.items);
-  const answered = items.filter((i) => i.result && !isDenied(i.result) && !isPending(i.result) && i.result.status !== "FAILED");
+  const answered = items.filter((i) => i.result && !isDenied(i.result) && !isOpenRequest(i.result) && i.result.status !== "FAILED");
   const averageMs = Math.round(dossiers.reduce((sum, d) => sum + d.durationMs, 0) / dossiers.length);
 
   return (

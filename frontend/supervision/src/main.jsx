@@ -6,8 +6,8 @@ import App from "./App";
 
 mountPortal({
   session,
-  role: "supervisor",
-  roleLabel: "à la supervision et au délégué à la protection des données",
+  role: ["supervisor", "platform_admin"],
+  roleLabel: "à la supervision, au délégué à la protection des données et à l'administrateur de la plateforme",
   portal: "Supervision",
   App,
 });

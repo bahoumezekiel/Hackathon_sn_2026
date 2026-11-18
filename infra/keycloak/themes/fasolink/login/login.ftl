@@ -53,6 +53,12 @@
       <div id="forgot" class="fl-forgot" hidden>
         <p>${layout.portal.forgot}</p>
       </div>
+      <#-- Portail citoyen : inscription avec l'IUE (vérifié auprès de l'ONI, puis code SMS) -->
+      <#if (client.clientId)! == "portal-citizen" && (client.baseUrl)?has_content>
+        <a class="fl-btn fl-btn--secondary fl-btn--block fl-signup" href="${client.baseUrl}/inscription">
+          <span>Pas encore de compte ? Créer mon compte avec mon IUE</span>
+        </a>
+      </#if>
     </#if>
   </#if>
 </@layout.registrationLayout>

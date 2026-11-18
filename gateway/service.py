@@ -9,13 +9,14 @@
   ou mise en file d'attente avec relance automatique.
 """
 import logging
+import threading
 import uuid
 from collections import OrderedDict
 from datetime import datetime, timedelta
 
 from psycopg.types.json import Jsonb
 
-from . import audit, config, crypto, db, policy, registry_client, resilience
+from . import audit, config, consentement_sms, crypto, db, policy, registry_client, resilience, sms
 from .predicates import PREDICATES, PredicateError, compute, display
 
 log = logging.getLogger("fasolink.service")
@@ -32,7 +33,7 @@ class BadRequest(Exception):
 # ---------------------------------------------------------------- identité
 
 def resolve_identity(conn, citizen: dict) -> dict:
-    iue = (citizen.get("iue") or "").strip()
+    iue = "".join((citizen.get("iue") or "").split())   # IUE à 12 chiffres, espaces tolérés
     registry = (citizen.get("registry") or "").strip().upper()
     local_ref = (citizen.get("local_reference") or "").strip()
     if iue:
@@ -81,6 +82,21 @@ def _submit_one(admin, agent_id, identity, registry_code, preds, purpose_code, j
         decision = policy.evaluate(c, admin_id=admin["id"], registry_id=reg["id"],
                                    identity_id=identity["id"], purpose_code=purpose_code,
                                    predicates=preds, justification=justification)
+
+    # Seul le consentement manque : on le demande par SMS au numéro associé à l'IUE
+    phone = consentement_sms.lookup_phone(identity) if decision.consent_can_unlock else None
+    reason = decision.reason
+    if decision.consent_can_unlock and not phone:
+        reason += " ; l'usager n'a pas pu être joint par SMS (pas d'IUE actif ou de téléphone)"
+
+    sms_text = None
+    with db.tx() as c:
+        if phone:
+            status, effect, reason, completed = ("AWAITING_CONSENT", None,
+                                                 "Accord de l'usager demandé par SMS", None)
+        else:
+            status = "PROCESSING" if decision.allowed else "DENIED"
+            effect, completed = decision.effect, None if decision.allowed else db.utcnow()
         req = c.execute(
             """INSERT INTO access_request
                  (requester_admin_id, requester_user_id, identity_id, registry_id, policy_id,
@@ -89,15 +105,22 @@ def _submit_one(admin, agent_id, identity, registry_code, preds, purpose_code, j
                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
             (admin["id"], agent_id, identity["id"], reg["id"], decision.policy_id, purpose_code,
              decision.legal_basis or "Aucune base légale applicable", justification, Jsonb(preds),
-             "PROCESSING" if decision.allowed else "DENIED", decision.effect, decision.reason,
-             None if decision.allowed else db.utcnow())).fetchone()
+             status, effect, reason, completed)).fetchone()
         common = dict(request_id=req["id"], identity_id=identity["id"], actor_admin_id=admin["id"],
                       actor_user_id=agent_id, registry_id=reg["id"], purpose_code=purpose_code)
         audit.log(c, "ACCESS_REQUESTED", decision="N/A", attributes=preds, **common)
-        audit.log(c, "POLICY_DECISION", decision=decision.effect, attributes=decision.granted,
-                  **common)
+        if phone:
+            sms_text = consentement_sms.open_request(c, req, phone)
+        else:
+            audit.log(c, "POLICY_DECISION", decision=decision.effect, attributes=decision.granted,
+                      **common)
 
-    if decision.allowed:
+    if sms_text:
+        # En arrière-plan, avec nouvelles tentatives en cas de coupure réseau : l'agent reçoit
+        # tout de suite « accord attendu », sa fiche se met à jour si l'envoi échoue finalement
+        threading.Thread(target=consentement_sms.deliver, args=(req["id"], phone, sms_text),
+                         daemon=True, name="consentement-sms").start()
+    elif decision.allowed:
         execute(req["id"])
     return request_view(req["id"])
 
@@ -111,17 +134,23 @@ def execute(request_id, *, is_retry: bool = False) -> None:
         decision = policy.evaluate(c, admin_id=req["requester_admin_id"], registry_id=reg["id"],
                                    identity_id=req["identity_id"], purpose_code=req["purpose_code"],
                                    predicates=req["requested_predicates"],
-                                   justification=req["justification"])
+                                   justification=req["justification"], request_id=request_id)
         if is_retry:
             audit.log(c, "REQUEST_RETRIED", decision="N/A", service_mode=req["service_mode"],
                       **_common(req))
-            if not decision.allowed:  # ex. consentement retiré pendant l'attente
-                c.execute("""UPDATE access_request SET status='DENIED', decision='DENY',
-                             decision_reason=%s, completed_at=now(), next_retry_at=NULL
-                             WHERE id=%s""", (decision.reason, request_id))
-                audit.log(c, "POLICY_DECISION", decision="DENY", service_mode=req["service_mode"],
-                          **_common(req))
-                return
+        if not decision.allowed:  # ex. consentement retiré pendant l'attente, politique close
+            c.execute("""UPDATE access_request SET status='DENIED', decision='DENY',
+                         decision_reason=%s, completed_at=now(), next_retry_at=NULL
+                         WHERE id=%s""", (decision.reason, request_id))
+            audit.log(c, "POLICY_DECISION", decision="DENY", service_mode=req["service_mode"],
+                      **_common(req))
+            return
+        if not is_retry and req["status"] == "PROCESSING" and \
+                c.execute("SELECT 1 FROM sms_consent_request WHERE request_id=%s AND status='GRANTED'",
+                          (request_id,)).fetchone():
+            # Accord reçu par SMS : la décision d'accès est désormais favorable
+            audit.log(c, "POLICY_DECISION", decision=decision.effect, attributes=decision.granted,
+                      **_common(req))
         mapping = c.execute(
             """SELECT local_reference_ciphertext FROM registry_identity_mapping
                WHERE identity_id=%s AND registry_id=%s AND mapping_status='ACTIVE'""",
@@ -139,7 +168,8 @@ def execute(request_id, *, is_retry: bool = False) -> None:
         return _handle_unavailable(req, reg, decision, str(exc), is_retry)
 
     try:
-        values = {p: compute(p, record, req["purpose_code"]) for p in decision.granted}
+        values = {p: compute(p, record, req["purpose_code"], params=decision.parametres)
+                  for p in decision.granted}
     except PredicateError as exc:
         return _fail(req, "PREDICATE_ERROR", str(exc))
     finally:
@@ -312,7 +342,12 @@ def process_due_queue() -> int:
 def request_view(request_id, *, admin_id=None) -> dict:
     with db.tx() as c:
         req = c.execute(
-            """SELECT q.*, r.code AS registry_code, r.name AS registry_name
+            """SELECT q.*, r.code AS registry_code, r.name AS registry_name,
+                      purpose_label(q.requester_admin_id, q.purpose_code) AS purpose_label,
+                      (SELECT jsonb_build_object('telephone', s.phone_masked, 'status', s.status,
+                                                 'sent_at', s.sent_at, 'expires_at', s.expires_at,
+                                                 'answered_at', s.answered_at)
+                         FROM sms_consent_request s WHERE s.request_id = q.id) AS consent_sms
                FROM access_request q JOIN administrative_registry r ON r.id = q.registry_id
                WHERE q.id=%s""", (request_id,)).fetchone()
         if not req or (admin_id and req["requester_admin_id"] != admin_id):
@@ -325,6 +360,8 @@ def request_view(request_id, *, admin_id=None) -> dict:
         "request_id": str(req["id"]),
         "registry": {"code": req["registry_code"], "name": req["registry_name"]},
         "purpose_code": req["purpose_code"],
+        "purpose_label": req["purpose_label"],
+        "consent_sms": req["consent_sms"],   # accord demandé par SMS (numéro masqué)
         "status": req["status"],
         "decision": req["decision"],
         "decision_reason": req["decision_reason"],

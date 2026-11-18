@@ -15,11 +15,26 @@ x-fasolink-env: &fasolink-env
   FASOLINK_KEYCLOAK_URL: http://keycloak:8080
   FASOLINK_KEYCLOAK_PUBLIC_URL: http://localhost:8080
   FASOLINK_KEYCLOAK_REALM: fasolink
+  FASOLINK_KEYCLOAK_ADMIN_CLIENT_SECRET: ${FASOLINK_ADMIN_API_SECRET:?Relancez scripts/init_env.py}
   FASOLINK_REGISTRY_TOKEN: ${FASOLINK_REGISTRY_TOKEN:?}
   FASOLINK_REGISTRY_ETAT_CIVIL_URL: http://registry-etat-civil:8000
   FASOLINK_REGISTRY_NATIONALITE_URL: http://registry-nationalite:8000
   FASOLINK_REGISTRY_CASIER_URL: http://registry-casier:8000
+  FASOLINK_REGISTRY_IUE_URL: http://registry-iue:8000
   FASOLINK_DEMO_MODE: "1"
+  # SMS : « simulateur » (défaut, aucun envoi réel) ou « twilio » (renseigner TWILIO_* dans .env)
+  FASOLINK_SMS_PROVIDER: ${FASOLINK_SMS_PROVIDER:-simulateur}
+  TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+  TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+  TWILIO_API_KEY: ${TWILIO_API_KEY:-}
+  TWILIO_API_SECRET: ${TWILIO_API_SECRET:-}
+  TWILIO_FROM: ${TWILIO_FROM:-}
+  TWILIO_MESSAGING_SERVICE_SID: ${TWILIO_MESSAGING_SERVICE_SID:-}
+  TWILIO_WEBHOOK_URL: ${TWILIO_WEBHOOK_URL:-}
+  FASOLINK_SMS_DEMO_PHONES: ${FASOLINK_SMS_DEMO_PHONES:-}
+  # Appel vocal de consentement (Twilio Voice, touches 1/2) et adresse publique (ngrok)
+  FASOLINK_VOICE_CONSENT: ${FASOLINK_VOICE_CONSENT:-0}
+  FASOLINK_PUBLIC_URL: ${FASOLINK_PUBLIC_URL:-}
 
 x-registry: &registry
   image: fasolink/app:dev        # construite par le service gateway
@@ -132,6 +147,15 @@ services:
       REGISTRY_CODE: CASIER
       FASOLINK_REGISTRY_TOKEN: ${FASOLINK_REGISTRY_TOKEN}
 
+  # Registre national des IUE (ONI) : vérification de l'IUE à l'inscription des citoyens
+  registry-iue:
+    <<: *registry
+    environment:
+      REGISTRY_CODE: IUE
+      FASOLINK_REGISTRY_TOKEN: ${FASOLINK_REGISTRY_TOKEN}
+      # Démo Twilio : vrais numéros pour certains IUE fictifs (ex. 693027415586=+22670000000)
+      IUE_PHONE_OVERRIDES: ${FASOLINK_SMS_DEMO_PHONES:-}
+
   # ------------------------------------------------------------ FasoLink
   fasolink-init:
     image: fasolink/app:dev
@@ -156,6 +180,7 @@ services:
       registry-etat-civil: { condition: service_healthy }
       registry-nationalite: { condition: service_healthy }
       registry-casier: { condition: service_healthy }
+      registry-iue: { condition: service_healthy }
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 5s

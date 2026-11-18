@@ -7,7 +7,7 @@ const MIN_JUSTIFICATION = 10; // même seuil que la politique OPA
 const DEMO_JUSTIFICATION = "Dossier n° 2026-118, demande déposée au guichet";
 
 const MODES = {
-  iue: { label: "IUE", field: "Identifiant unique de l'usager", example: "BF1998000123" },
+  iue: { label: "IUE", field: "Identifiant unique électronique (12 chiffres)", example: "482019736154" },
   local: { label: "Acte d'état civil", field: "Référence de l'acte d'état civil", example: "EC-FDG-2001-000222" },
 };
 
@@ -24,41 +24,54 @@ function Segmented({ value, onChange }) {
   );
 }
 
-/** Une finalité autorisée = une pièce que l'usager n'a plus à fournir. */
-function PieceOption({ purpose, predicateLabels, checked, onChange }) {
-  const question = purpose.allowed_predicates.map((p) => predicateLabels[p] ?? p).join(", ");
+/** Un registre du cas d'usage = une pièce que l'usager n'a plus à fournir. */
+function RegistryOption({ registre, predicateLabels, checked, onChange }) {
+  const question = registre.allowed_predicates.map((p) => predicateLabels[p] ?? p).join(", ");
   return (
-    <label className={`piece-option${checked ? " is-checked" : ""}`} title={`Base légale : ${purpose.legal_basis}`}>
+    <label className={`piece-option${checked ? " is-checked" : ""}`}>
       <input type="checkbox" checked={checked} onChange={onChange} />
       <span className="piece-text">
-        <span className="piece-name">{pieceLabel(purpose.allowed_predicates[0])}</span>
-        <span className="piece-meta">{question} ? · {purpose.registry_name}</span>
+        <span className="piece-name">{pieceLabel(registre.allowed_predicates[0])}</span>
+        <span className="piece-meta">{question} ? · {registre.registry_name}</span>
       </span>
-      {purpose.requires_consent && <span className="piece-consent">Accord requis</span>}
+      {registre.requires_consent && <span className="piece-consent">Accord requis</span>}
     </label>
   );
 }
 
-export default function VerifyForm({ purposes, predicateLabels, demo, onSubmit }) {
+const allRegistries = (cas) => new Set(cas?.registres.map((r) => r.registry_code) ?? []);
+
+export default function VerifyForm({ casUsage, predicateLabels, demo, onSubmit }) {
   const ids = useId();
   const [mode, setMode] = useState("iue");
   const [identifier, setIdentifier] = useState("");
   const [picked, setPicked] = useState(null);
-  const [selected, setSelected] = useState(() => new Set(purposes.map((p) => p.policy_code)));
+  const [casCode, setCasCode] = useState(casUsage[0]?.code);
+  const cas = casUsage.find((c) => c.code === casCode) ?? casUsage[0];
+  const [selected, setSelected] = useState(() => allRegistries(cas));
   const [justification, setJustification] = useState(demo ? DEMO_JUSTIFICATION : "");
   const [testRefusal, setTestRefusal] = useState(false);
   const [errors, setErrors] = useState({});
   const [busy, setBusy] = useState(false);
 
-  if (!purposes.length) {
-    return <p className="notice notice-warning desk-message">Aucune politique d'accès n'est active pour votre administration.</p>;
+  if (!cas) {
+    return <p className="notice notice-warning desk-message">Aucun cas d'usage n'est actif pour votre administration.</p>;
   }
 
-  const chosen = purposes.filter((p) => selected.has(p.policy_code));
-  const allChosen = chosen.length === purposes.length;
-  // Test de refus : une information que la première finalité cochée n'autorise pas
-  const outOfScope = chosen[0] && Object.keys(predicateLabels).find((p) => !chosen[0].allowed_predicates.includes(p));
+  const chosen = cas.registres.filter((r) => selected.has(r.registry_code));
+  const allChosen = chosen.length === cas.registres.length;
+  // Test de refus : une information qu'aucun registre de ce cas d'usage ne fournit
+  const allowed = new Set(cas.registres.flatMap((r) => r.allowed_predicates));
+  const outOfScope = Object.keys(predicateLabels).find((p) => !allowed.has(p));
   const justificationLength = justification.trim().length;
+  const needsJustification = cas.requires_justification;
+
+  function changeCas(code) {
+    setCasCode(code);
+    setSelected(allRegistries(casUsage.find((c) => c.code === code)));
+    setTestRefusal(false);
+    setErrors({});
+  }
 
   function changeMode(next) {
     setMode(next);
@@ -83,11 +96,11 @@ export default function VerifyForm({ purposes, predicateLabels, demo, onSubmit }
 
   async function submit(event) {
     event.preventDefault();
-    const id = identifier.trim().toUpperCase();
+    const id = mode === "iue" ? identifier.replace(/\s/g, "") : identifier.trim().toUpperCase();
     const found = {
       identifier: id ? null : `Saisissez ${mode === "iue" ? "l'IUE" : "la référence de l'acte"} de l'usager.`,
-      pieces: chosen.length ? null : "Cochez au moins une pièce à vérifier.",
-      justification: justificationLength >= MIN_JUSTIFICATION
+      pieces: chosen.length ? null : "Cochez au moins un registre à consulter.",
+      justification: !needsJustification || justificationLength >= MIN_JUSTIFICATION
         ? null
         : `Le motif doit compter au moins ${MIN_JUSTIFICATION} caractères.`,
     };
@@ -95,18 +108,19 @@ export default function VerifyForm({ purposes, predicateLabels, demo, onSubmit }
     if (found.identifier || found.pieces || found.justification) return;
 
     const citizen = mode === "iue" ? { iue: id } : { registry: "ETAT_CIVIL", local_reference: id };
-    const requests = chosen.map((purpose, index) => ({
-      purpose,
-      payload: {
-        citizen,
-        purpose_code: purpose.purpose_code,
-        predicates: [...purpose.allowed_predicates, ...(index === 0 && demo && testRefusal && outOfScope ? [outOfScope] : [])],
-        justification: justification.trim(),
-      },
-    }));
+    const extra = demo && testRefusal && outOfScope ? outOfScope : null;
+    // Une seule demande pour le cas d'usage : FasoLink la répartit entre les registres cochés
+    const payload = {
+      citizen,
+      purpose_code: cas.code,
+      predicates: [...chosen.flatMap((r) => r.allowed_predicates), ...(extra ? [extra] : [])],
+      justification: justification.trim() || null,
+    };
     setBusy(true);
     try {
-      await onSubmit({ citizen: { id, name: picked?.label }, justification: justification.trim(), requests });
+      await onSubmit({
+        citizen: { id, name: picked?.label }, justification: justification.trim(), cas, registres: chosen, extra, payload,
+      });
     } catch (err) {
       setErrors({ form: err.message });
     } finally {
@@ -117,6 +131,21 @@ export default function VerifyForm({ purposes, predicateLabels, demo, onSubmit }
   return (
     <form className="desk-form" onSubmit={submit} noValidate>
       <div className="desk-body">
+        <fieldset className="block">
+          <legend className="block-title">Démarche</legend>
+          {casUsage.length > 1 ? (
+            <div className="field">
+              <label className="label" htmlFor={`${ids}-cas`}>Cas d'usage traité</label>
+              <select id={`${ids}-cas`} className="input" value={cas.code} onChange={(e) => changeCas(e.target.value)}>
+                {casUsage.map((c) => <option key={c.code} value={c.code}>{c.label}</option>)}
+              </select>
+            </div>
+          ) : (
+            <p className="cas-name">{cas.label}</p>
+          )}
+          <p className="hint">{cas.description ? `${cas.description} ` : ""}Base légale : {cas.legal_basis}</p>
+        </fieldset>
+
         <fieldset className="block">
           <legend className="block-title">Usager</legend>
           <Segmented value={mode} onChange={changeMode} />
@@ -154,25 +183,26 @@ export default function VerifyForm({ purposes, predicateLabels, demo, onSubmit }
 
         <fieldset className="block">
           <legend className="block-title">
-            Pièces à vérifier
-            {purposes.length > 1 && (
+            Registres à consulter
+            {cas.registres.length > 1 && (
               <button
                 type="button"
                 className="block-action"
-                onClick={() => setSelected(new Set(allChosen ? [] : purposes.map((p) => p.policy_code)))}
+                onClick={() => setSelected(allChosen ? new Set() : allRegistries(cas))}
               >
                 {allChosen ? "Tout décocher" : "Tout cocher"}
               </button>
             )}
           </legend>
+          <p className="hint">Ne cochez que ce que le dossier de cet usager exige.</p>
           <div className="piece-list">
-            {purposes.map((p) => (
-              <PieceOption
-                key={p.policy_code}
-                purpose={p}
+            {cas.registres.map((r) => (
+              <RegistryOption
+                key={r.registry_code}
+                registre={r}
                 predicateLabels={predicateLabels}
-                checked={selected.has(p.policy_code)}
-                onChange={() => toggle(p.policy_code)}
+                checked={selected.has(r.registry_code)}
+                onChange={() => toggle(r.registry_code)}
               />
             ))}
           </div>
@@ -181,7 +211,7 @@ export default function VerifyForm({ purposes, predicateLabels, demo, onSubmit }
             <label className="check test-refusal">
               <input type="checkbox" checked={testRefusal} onChange={(e) => setTestRefusal(e.target.checked)} />
               <span>
-                Tester un refus : demander aussi « {predicateLabels[outOfScope]} », information que cette finalité
+                Tester un refus : demander aussi « {predicateLabels[outOfScope]} », information que ce cas d'usage
                 n'autorise pas.
               </span>
             </label>
@@ -189,7 +219,7 @@ export default function VerifyForm({ purposes, predicateLabels, demo, onSubmit }
         </fieldset>
 
         <fieldset className="block">
-          <legend className="block-title">Motif</legend>
+          <legend className="block-title">Motif{!needsJustification && " (facultatif)"}</legend>
           <div className="field">
             <label className="visually-hidden" htmlFor={`${ids}-why`}>Justification de la demande</label>
             <textarea
@@ -215,9 +245,9 @@ export default function VerifyForm({ purposes, predicateLabels, demo, onSubmit }
         <button type="submit" className="btn btn-primary btn-lg btn-block" disabled={busy || !chosen.length}>
           {busy
             ? <><Spinner /> Interrogation des registres…</>
-            : chosen.length > 1 ? `Vérifier les ${chosen.length} pièces` : "Vérifier la pièce"}
+            : chosen.length > 1 ? `Consulter les ${chosen.length} registres` : "Consulter le registre"}
         </button>
-        <p className="desk-summary">{plural(chosen.length, "pièce cochée", "pièces cochées")} sur {purposes.length}</p>
+        <p className="desk-summary">{plural(chosen.length, "registre coché", "registres cochés")} sur {cas.registres.length}</p>
       </div>
     </form>
   );

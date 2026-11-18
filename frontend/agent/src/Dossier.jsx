@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { AnimatePresence, m } from "motion/react";
 import {
-  IDENTITY_STATUS, formatDateTime, formatTime, isDenied, isPending, pieceLabel, plural, purposeLabel,
+  IDENTITY_STATUS, formatDateTime, formatTime, isAwaitingConsent, isDenied, isPending, pieceLabel, plural, purposeLabel,
 } from "@fasolink/shared/format";
 import { Badge, Spinner } from "@fasolink/shared/ui";
 import { api } from "./api";
@@ -18,15 +18,23 @@ function outcomeOf(item) {
   const { result, error } = item;
   if (error) return { kind: "failed", label: "Échec", reason: error };
   if (isDenied(result)) return { kind: "denied", label: "Refusée", reason: result.decision_reason };
+  if (isAwaitingConsent(result)) {
+    const sms = result.consent_sms;
+    return {
+      kind: "pending",
+      label: "Accord attendu",
+      reason: `Cette consultation exige l'accord de l'usager. SMS envoyé au ${sms?.telephone ?? "numéro associé à son IUE"} : il répond 1 (OUI) ou 2 (NON), au plus tard à ${formatTime(sms?.expires_at)}. La réponse s'affichera ici.`,
+    };
+  }
   if (isPending(result)) {
     const retry = result.next_retry_at ? ` Nouvelle tentative à ${formatTime(result.next_retry_at)}.` : "";
     return { kind: "pending", label: "En attente", reason: `Registre indisponible : relance automatique.${retry}` };
   }
   if (result.status === "FAILED") return { kind: "failed", label: "Échec", reason: result.decision_reason };
-  return { kind: "answered" };
+  return { kind: "answered", reason: result.consent_sms?.status === "GRANTED" ? "Accord donné par l'usager par SMS, pour cette consultation uniquement." : undefined };
 }
 
-function Proof({ attestation }) {
+function Proof({ attestation, purposeName }) {
   const [check, setCheck] = useState(null); // null · "busy" · résultat de /v1/attestations/verify
   const [showToken, setShowToken] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -64,7 +72,7 @@ function Proof({ attestation }) {
         {check && check !== "busy" && (
           <p className={`notice ${check.valid ? "notice-info" : "notice-danger"}`} role="status">
             {check.valid
-              ? `Signature valide : émise pour ${check.claims.aud}, finalité « ${purposeLabel(check.claims.purpose).toLowerCase()} ».`
+              ? `Signature valide : émise pour ${check.claims.aud}, finalité « ${purposeLabel(check.claims.purpose, purposeName).toLowerCase()} ».`
               : check.error}
           </p>
         )}
@@ -89,7 +97,7 @@ function PieceRow({ item, predicateLabels }) {
       <div className="piece-row-main">
         <div className="piece-row-text">
           <p className="piece-row-name">{pieceLabel(item.purpose.allowed_predicates[0])}</p>
-          <p className="piece-row-meta">{purposeLabel(item.purpose.purpose_code)} · {item.purpose.registry_name}</p>
+          <p className="piece-row-meta">{item.purpose.registry_name}</p>
         </div>
 
         <div className="piece-row-answer">
@@ -134,7 +142,7 @@ function PieceRow({ item, predicateLabels }) {
         </p>
       ))}
       <AnimatePresence initial={false}>
-        {proofOpen && attestations.map((a) => <Proof key={a.predicate} attestation={a} />)}
+        {proofOpen && attestations.map((a) => <Proof key={a.predicate} attestation={a} purposeName={item.purpose.purpose_label} />)}
       </AnimatePresence>
     </li>
   );
@@ -182,6 +190,7 @@ export default function Dossier({ dossier, predicateLabels, open, onToggle }) {
         {open && (
           <m.div id={bodyId} className="dossier-body" {...EXPAND}>
             {identity && <p className="dossier-identity"><Badge tone="warning">{identity}</Badge></p>}
+            {dossier.cas && <p className="dossier-motive"><span>Cas d'usage</span>{dossier.cas}</p>}
             <ul className="piece-rows">
               {items.map((item) => <PieceRow key={item.key} item={item} predicateLabels={predicateLabels} />)}
             </ul>
