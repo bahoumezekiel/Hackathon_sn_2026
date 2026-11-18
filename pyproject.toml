@@ -1,0 +1,17 @@
+[project]
+name = "fasolink"
+version = "0.2.0"
+description = "Socle d'interopérabilité administrative : « Dites-le nous une fois »"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = ["B008"]   # Depends(...) en valeur par défaut : idiome de FastAPI

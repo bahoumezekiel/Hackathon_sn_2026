@@ -1,0 +1,15 @@
+# Gitleaks : détection de secrets (clés, jetons, mots de passe) dans le code et l'historique git.
+# Règles par défaut de Gitleaks, plus les exceptions ci-dessous.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Fichiers générés localement par scripts/init_env.py, jamais versionnés (.gitignore)"
+paths = [
+  '''(^|/)\.env$''',
+  '''(^|/)infra/keycloak/realm-fasolink\.json$''',
+  '''(^|/)node_modules/''',
+  '''(^|/)dist/''',
+  '''(^|/)rapports-securite/''',
+]

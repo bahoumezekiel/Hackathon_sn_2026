@@ -1,10 +1,9 @@
 """Accès PostgreSQL : une transaction courte par étape (pas de verrou pendant les appels HTTP)."""
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import psycopg
 from psycopg.rows import dict_row
-from psycopg.types.json import Jsonb  # noqa: F401  (réexporté)
 
 from . import config
 
@@ -21,4 +20,4 @@ def tx():
 
 
 def utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)

@@ -155,14 +155,15 @@ def _attribute(name, label, validations, required=False):
 
 # Profil utilisateur : e-mail FACULTATIF. Un citoyen s'inscrit avec son IUE et son téléphone,
 # un agent peut être créé sans e-mail ; sinon Keycloak bloque la connexion (« profil incomplet »).
+_PERSON_NAME = {"length": {"max": 255}, "person-name-prohibited-characters": {}}
 USER_PROFILE = {
     "attributes": [
         _attribute("username", "${username}", {"length": {"min": 3, "max": 255},
                                                "username-prohibited-characters": {},
                                                "up-username-not-idn-homograph": {}}),
         _attribute("email", "${email}", {"email": {}, "length": {"max": 255}}),
-        _attribute("firstName", "${firstName}", {"length": {"max": 255}, "person-name-prohibited-characters": {}}, True),
-        _attribute("lastName", "${lastName}", {"length": {"max": 255}, "person-name-prohibited-characters": {}}, True),
+        _attribute("firstName", "${firstName}", _PERSON_NAME, True),
+        _attribute("lastName", "${lastName}", _PERSON_NAME, True),
     ],
     "groups": [{"name": "user-metadata", "displayHeader": "User metadata",
                 "displayDescription": "Attributes, which refer to user metadata"}],

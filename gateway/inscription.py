@@ -112,7 +112,8 @@ def start(iue: str, birth_date: str) -> dict:
                                             "code": _code_hash(token, code), "attempts": 0})
     resilience.r.expire(_key(token), config.SIGNUP_CODE_TTL_S)
     try:
-        _send_sms(record["telephone"], f"FasoLink: votre code d'inscription est {code}. Valable 10 min. Ne le communiquez a personne.")
+        _send_sms(record["telephone"], f"FasoLink: votre code d'inscription est {code}. "
+                                       "Valable 10 min. Ne le communiquez a personne.")
     except sms.SmsError as exc:
         resilience.r.delete(_key(token))
         raise Unavailable("Le SMS n'a pas pu être envoyé. Réessayez dans quelques minutes.") from exc
@@ -188,7 +189,7 @@ def confirm(token: str, code: str, password: str) -> dict:
             user_id = keycloak_admin.create_citizen(username=iue.lower(), first_name=record["prenoms"],
                                                     last_name=record["nom"], password=password)
     except keycloak_admin.Conflict:
-        raise Conflict("Un compte existe déjà pour cet IUE : connectez-vous.")
+        raise Conflict("Un compte existe déjà pour cet IUE : connectez-vous.") from None
     except Exception:
         if user_id:
             keycloak_admin.delete_user(user_id)

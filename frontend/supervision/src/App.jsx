@@ -5,7 +5,7 @@ import { Footer, PageHero, Spinner, TopBar } from "@fasolink/shared/ui";
 import { api, session } from "./api";
 import Alerts, { isOpen } from "./Alerts";
 import Platform from "./Platform";
-import Referentiel from "./Referentiel";
+import Referentiel from "./referentiel/Referentiel";
 import Registries from "./Registries";
 import RequestFeed from "./RequestFeed";
 

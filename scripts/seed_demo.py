@@ -7,7 +7,7 @@ import argparse
 import json
 import pathlib
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from urllib.parse import urlparse
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -64,7 +64,7 @@ with psycopg.connect(config.DATABASE_URL, autocommit=True) as c:
                  crypto.key_version(iue_ct) if iue else None,
                  cit["identity_status"],
                  "SUCCESS" if cit["identity_status"] == "VERIFIED" else "NOT_VERIFIED",
-                 datetime.now(timezone.utc) if cit["identity_status"] == "VERIFIED" else None,
+                 datetime.now(UTC) if cit["identity_status"] == "VERIFIED" else None,
                  )).fetchone()[0]
             for code, section in sections.items():
                 if cit.get(section):

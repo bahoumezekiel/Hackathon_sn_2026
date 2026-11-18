@@ -1,0 +1,61 @@
+# Contrôles automatiques à chaque push et pull request :
+#   qualité   tests unitaires, ruff, tests des règles OPA
+#   statique  Gitleaks (secrets) et Semgrep CE (analyse du code)
+#   dynamique plateforme complète démarrée, épreuve de bout en bout, puis OWASP ZAP
+name: Qualité et sécurité
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualite:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pytest ruff
+      - run: python -m pytest
+      - run: ruff check .
+      - run: docker run --rm -v "$PWD/policies:/policies" openpolicyagent/opa:1.0.0 test /policies -v
+
+  statique:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # tout l'historique, pour Gitleaks
+      - run: python3 scripts/audit_securite.py gitleaks semgrep
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rapports-statique
+          path: rapports-securite/
+
+  dynamique:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/init_env.py
+      - run: docker compose up -d --build
+      - name: Attendre la plateforme
+        run: |
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:3001/api/health && exit 0
+            sleep 5
+          done
+          docker compose ps; docker compose logs gateway; exit 1
+      - run: pip install httpx && python3 scripts/demo_epreuve.py
+      - run: python3 scripts/audit_securite.py zap
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rapports-dynamique
+          path: rapports-securite/

@@ -1,0 +1,6 @@
+# Semgrep : fichiers exclus de l'analyse statique
+node_modules/
+dist/
+docs/
+rapports-securite/
+.pytest_cache/

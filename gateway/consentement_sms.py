@@ -100,7 +100,7 @@ def _grant(c, target: dict, channel: str) -> None:
 
 
 def _run(request_id) -> None:
-    from . import service   # import tardif : service importe ce module
+    from . import service  # import tardif : service importe ce module
     service.execute(request_id)
 
 

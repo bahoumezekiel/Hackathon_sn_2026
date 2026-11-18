@@ -16,7 +16,7 @@ from datetime import datetime, timedelta
 
 from psycopg.types.json import Jsonb
 
-from . import audit, config, consentement_sms, crypto, db, policy, registry_client, resilience, sms
+from . import audit, config, consentement_sms, crypto, db, policy, registry_client, resilience
 from .predicates import PREDICATES, PredicateError, compute, display
 
 log = logging.getLogger("fasolink.service")

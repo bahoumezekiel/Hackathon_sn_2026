@@ -94,6 +94,7 @@ def evaluate(conn, *, admin_id, registry_id, identity_id, purpose_code: str,
     return Decision(result["effect"], result["reason"], list(result.get("granted", [])),
                     consent_can_unlock=unlock, **base)
 
+
 def health() -> bool:
     try:
         return _client.get("/health", timeout=2).status_code == 200

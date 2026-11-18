@@ -28,9 +28,9 @@ def _claims(creds: HTTPAuthorizationCredentials | None) -> dict:
         return jwt.decode(creds.credentials, key, algorithms=["RS256"],
                           audience=config.KEYCLOAK_AUDIENCE, issuer=config.KEYCLOAK_ISSUER)
     except jwt.ExpiredSignatureError:
-        raise HTTPException(401, "Jeton expiré, reconnectez-vous")
+        raise HTTPException(401, "Jeton expiré, reconnectez-vous") from None
     except (jwt.PyJWTError, jwt.PyJWKClientError) as exc:
-        raise HTTPException(401, f"Jeton invalide ({type(exc).__name__})")
+        raise HTTPException(401, f"Jeton invalide ({type(exc).__name__})") from exc
 
 
 def _roles(claims: dict) -> set[str]:

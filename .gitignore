@@ -1,9 +1,27 @@
+# Secrets et fichiers générés par scripts/init_env.py
 .env
 .keys/
 infra/keycloak/realm-fasolink.json
-node_modules/
-dist/
+
+# Python
 __pycache__/
 *.pyc
 .pytest_cache/
-~$*.docx
+.venv/
+
+# Node
+node_modules/
+dist/
+
+# Éditeurs et système
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log
+
+# Fichiers temporaires d'Office
+~$*
+
+# Rapports de scripts/audit_securite.py
+rapports-securite/

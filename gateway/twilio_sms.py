@@ -27,6 +27,24 @@ def _auth(account_sid: str, auth_token: str, api_key: str, api_secret: str) -> t
     return (api_key, api_secret) if api_key and api_secret else (account_sid, auth_token)
 
 
+def _post(path: str, data: dict, auth: tuple[str, str], client: httpx.Client | None, *,
+          action: str) -> str:
+    """Appel à l'API REST ; renvoie l'identifiant de la ressource créée (SM…, CA…)."""
+    http = client or httpx.Client(timeout=10)
+    try:
+        resp = http.post(f"{API}{path}", data=data, auth=auth)
+    except httpx.HTTPError as exc:
+        raise TwilioError(f"Twilio injoignable ({type(exc).__name__})", transient=True) from exc
+    if resp.status_code >= 400:
+        try:
+            err = resp.json()
+            detail = f"{err.get('code')} : {err.get('message')}"
+        except ValueError:
+            detail = f"HTTP {resp.status_code}"
+        raise TwilioError(f"Twilio a refusé {action} ({detail})")
+    return resp.json().get("sid", "")
+
+
 def send(*, account_sid: str, auth_token: str, to: str, body: str, from_: str = "",
          messaging_service_sid: str = "", api_key: str = "", api_secret: str = "",
          client: httpx.Client | None = None) -> str:
@@ -38,20 +56,8 @@ def send(*, account_sid: str, auth_token: str, to: str, body: str, from_: str = 
         data["MessagingServiceSid"] = messaging_service_sid
     else:
         data["From"] = from_
-    http = client or httpx.Client(timeout=10)
-    try:
-        resp = http.post(f"{API}/Accounts/{account_sid}/Messages.json", data=data,
-                         auth=_auth(account_sid, auth_token, api_key, api_secret))
-    except httpx.HTTPError as exc:
-        raise TwilioError(f"Twilio injoignable ({type(exc).__name__})", transient=True) from exc
-    if resp.status_code >= 400:
-        try:
-            err = resp.json()
-            detail = f"{err.get('code')} : {err.get('message')}"
-        except ValueError:
-            detail = f"HTTP {resp.status_code}"
-        raise TwilioError(f"Twilio a refusé l'envoi ({detail})")
-    return resp.json().get("sid", "")
+    return _post(f"/Accounts/{account_sid}/Messages.json", data,
+                 _auth(account_sid, auth_token, api_key, api_secret), client, action="l'envoi")
 
 
 def call(*, account_sid: str, auth_token: str, to: str, from_: str, twiml: str,
@@ -59,21 +65,8 @@ def call(*, account_sid: str, auth_token: str, to: str, from_: str, twiml: str,
     """Passe un appel vocal dont le déroulé est décrit en TwiML ; renvoie l'identifiant (CA…)."""
     if not account_sid or not (auth_token or api_secret) or not from_:
         raise TwilioError("Twilio non configuré (SID, jeton ou clé d'API, et numéro d'appel requis)")
-    http = client or httpx.Client(timeout=10)
-    try:
-        resp = http.post(f"{API}/Accounts/{account_sid}/Calls.json",
-                         data={"To": to, "From": from_, "Twiml": twiml},
-                         auth=_auth(account_sid, auth_token, api_key, api_secret))
-    except httpx.HTTPError as exc:
-        raise TwilioError(f"Twilio injoignable ({type(exc).__name__})", transient=True) from exc
-    if resp.status_code >= 400:
-        try:
-            err = resp.json()
-            detail = f"{err.get('code')} : {err.get('message')}"
-        except ValueError:
-            detail = f"HTTP {resp.status_code}"
-        raise TwilioError(f"Twilio a refusé l'appel ({detail})")
-    return resp.json().get("sid", "")
+    return _post(f"/Accounts/{account_sid}/Calls.json", {"To": to, "From": from_, "Twiml": twiml},
+                 _auth(account_sid, auth_token, api_key, api_secret), client, action="l'appel")
 
 
 VOICE = 'language="fr-FR" voice="Polly.Lea"'   # voix française naturelle (Amazon Polly via Twilio)
